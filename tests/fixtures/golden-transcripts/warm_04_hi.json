@@ -1,0 +1,20 @@
+{
+  "lang_primary": "hi-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Namaste, Priya bol rahi hoon Supreme Petrochemicals Chennai se.","lang":"hi-IN"},
+    {"speaker":"lead","text":"Haan, kya kaam hai?","lang":"hi-IN"},
+    {"speaker":"agent","text":"Aap kya manufacture karte hain?","lang":"hi-IN"},
+    {"speaker":"lead","text":"Hum perfume banate hain. Main owner hoon","lang":"hi-IN"},
+    {"speaker":"agent","text":"Solvent chemicals chahiye?","lang":"hi-IN"},
+    {"speaker":"lead","text":"Bilkul, ethanol aur fragrance carriers. Lekin volumes chote hain, 200 kg mahine","lang":"hi-IN"},
+    {"speaker":"agent","text":"Hum chote volumes bhi serve karte hain. Quote bhejun?","lang":"hi-IN"},
+    {"speaker":"lead","text":"Pehle WhatsApp pe details bhej do, dekhenge","lang":"hi-IN"}
+  ],
+  "expected": {
+    "classification": "warm",
+    "score_range": [40, 65],
+    "decision_maker": true,
+    "timeline": "exploring",
+    "must_include": {"chemicals": ["ethanol"]}
+  }
+}

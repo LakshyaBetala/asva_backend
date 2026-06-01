@@ -1,0 +1,17 @@
+{
+  "lang_primary": "hi-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Namaste, main Priya hoon Supreme Petrochemicals se.","lang":"hi-IN"},
+    {"speaker":"lead","text":"Haan boliye","lang":"hi-IN"},
+    {"speaker":"agent","text":"Aap chemical procurement dekhte hain?","lang":"hi-IN"},
+    {"speaker":"lead","text":"Haan main hi dekhta hoon, lekin abhi hum stocked hain, naya supplier nahi chahiye","lang":"hi-IN"},
+    {"speaker":"agent","text":"Kabhi review karte hain to humein bata sakte hain?","lang":"hi-IN"},
+    {"speaker":"lead","text":"Theek hai, agle quarter review karenge, tab dekhenge","lang":"hi-IN"}
+  ],
+  "expected": {
+    "classification": "warm",
+    "score_range": [35, 55],
+    "decision_maker": true,
+    "timeline": "1-3mo"
+  }
+}

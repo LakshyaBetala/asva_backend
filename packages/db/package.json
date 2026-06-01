@@ -1,0 +1,14 @@
+{
+  "name": "@ai-voice/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "start": "supabase start --workdir supabase",
+    "stop": "supabase stop --workdir supabase",
+    "reset": "supabase db reset --workdir supabase",
+    "gen-types": "supabase gen types typescript --local --workdir supabase > src/types.gen.ts",
+    "test:rls": "supabase test db --workdir supabase"
+  }
+}

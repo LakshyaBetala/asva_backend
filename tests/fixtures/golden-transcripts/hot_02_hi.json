@@ -1,0 +1,20 @@
+{
+  "lang_primary": "hi-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Namaste, main Priya hoon Supreme Petrochemicals Chennai se. Kya aap 30 second baat kar sakte hain?","lang":"hi-IN"},
+    {"speaker":"lead","text":"Haan boliye, main Sunil hoon, purchase manager Brilliant Paints mein","lang":"hi-IN"},
+    {"speaker":"agent","text":"Theek hai Sunil ji. Aap kaunse chemicals kharidte hain abhi?","lang":"hi-IN"},
+    {"speaker":"lead","text":"Toluene aur titanium dioxide, har mahine 12 tonne se zyada","lang":"hi-IN"},
+    {"speaker":"agent","text":"Aapke current supplier ke saath koi dikkat hai?","lang":"hi-IN"},
+    {"speaker":"lead","text":"Price thoda zyada hai, aur quality bhi consistent nahi rehti. Hum naya supplier dhoondh rahe hain agle 2 maheene mein","lang":"hi-IN"},
+    {"speaker":"agent","text":"Hum 4 ghante mein quote bhej sakte hain. Email batayenge?","lang":"hi-IN"},
+    {"speaker":"lead","text":"Haan, sunil@brilliantpaints.co.in","lang":"hi-IN"}
+  ],
+  "expected": {
+    "classification": "hot",
+    "score_range": [75, 92],
+    "decision_maker": true,
+    "timeline": "1-3mo",
+    "must_include": {"chemicals": ["toluene", "titanium dioxide"], "supplier_pain": ["price", "quality"]}
+  }
+}

@@ -1,0 +1,373 @@
+"""Conversation phase machine + anti-AI sound enforcement.
+
+Why this exists
+---------------
+Latency and language are necessary but not sufficient. The "this is a robot"
+moment comes from three behaviors that humans don't do:
+
+  1. Repeating the same acknowledgment ("Got it. Got it. Got it.").
+  2. Zero filler words across the whole call (no "ji", "haan", "achha").
+  3. Paraphrasing yourself (Priya saying the same idea two turns apart).
+
+This module encodes those as hard state. The system prompt receives the
+current state every turn and the LLM is instructed to avoid the recorded
+patterns. A post-turn audit catches anything that slipped through.
+
+Phases drive a second behavior: Priya doesn't ask qualifying questions
+during the CONNECT phase (it's rapport time), and doesn't pitch during
+DISCOVER (it's listening time). The phase machine advances on time +
+extracted-slot count + buying_confidence; never goes backwards.
+
+EXTENSION phase is the dual-billing seam: at 170s, if buying_confidence
+is high, Priya gets another 180s of runway (call bills as 2 units).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+
+
+class Phase(str, Enum):
+    GREETING = "greeting"
+    CONNECT = "connect"
+    DISCOVER = "discover"
+    QUALIFY = "qualify"
+    CLOSE = "close"
+    EXTENSION = "extension"
+
+
+# Phase transition thresholds (seconds elapsed).
+# Aligned with credit boundaries: 150s (1 credit), 300s (2 credits), 450s (3 credits).
+GREETING_END_SEC = 8.0
+CONNECT_END_SEC = 35.0
+DISCOVER_END_SEC = 70.0
+QUALIFY_END_SEC = 130.0   # Qualify before 1st credit boundary
+CLOSE_END_SEC = 140.0     # Soft close at 140s → hard boundary at 150s
+EXTENSION_END_SEC = 290.0  # Extension before 2nd credit boundary
+
+# Minimum buying_confidence at 170s soft-close to enter EXTENSION instead
+# of wrapping up. Below this, we go to CLOSE and end gracefully.
+EXTENSION_CONFIDENCE_FLOOR = 0.6
+
+# Anti-repetition rolling window: last N Priya turns kept verbatim in
+# context with rule "do not paraphrase your own recent turns".
+RECENT_TURNS_WINDOW = 4
+
+# Minimum fillers per N turns. If Priya goes 3 turns without "ji/haan/
+# achha/right/okay", the audit flags it.
+MIN_FILLERS_PER_WINDOW = 1
+FILLER_AUDIT_WINDOW = 3
+
+# Fillers that count for the audit. Multilingual on purpose — Priya uses
+# Hindi fillers in English turns and vice versa (human bilinguals do this).
+FILLERS: frozenset[str] = frozenset({
+    "ji", "haan", "achha", "acha", "theek", "sahi", "bilkul",
+    "right", "okay", "ok", "sure", "got it", "i see", "mhm", "hmm",
+    "sari", "aama", "seri",
+})
+
+
+@dataclass
+class ConversationState:
+    """Per-call conversation state. One instance lives for the call."""
+
+    phase: Phase = Phase.GREETING
+
+    # Acknowledgments Priya has already used this call. The LLM is told to
+    # avoid these and pick a different one.
+    used_acknowledgments: set[str] = field(default_factory=set)
+
+    # Recent Priya turns (verbatim) for self-repetition prevention.
+    recent_priya_turns: list[str] = field(default_factory=list)
+
+    # Recent lead turns (verbatim, trimmed). Without this the LLM has zero
+    # memory of what the lead said across turns and keeps re-asking the same
+    # questions even after the lead just answered them.
+    recent_lead_turns: list[str] = field(default_factory=list)
+
+    # Rolling window of "did the last K turns contain at least one filler?"
+    # Used to nudge the LLM if Priya is sounding too formal.
+    filler_window: list[bool] = field(default_factory=list)
+
+    # Tracking for the soft-close: number of consecutive turns Priya has
+    # tried to close vs the lead extended the conversation. Prevents the
+    # robot loop of "alright, anything else?" / "no" / "alright, anything else?"
+    consecutive_close_attempts: int = 0
+
+    # How many times the lead has been off-topic (pizza, "kaun bol raha",
+    # random chat). Priya probes ONCE for a real requirement; on the second
+    # off-topic turn we end the call. See classify_lead_intent.
+    off_topic_count: int = 0
+
+    # How many times the lead has refused. First refusal → ask for a referral;
+    # second → warm goodbye + hang up. ("Try our best, then stop.")
+    reject_count: int = 0
+
+    # Consecutive "passive listener" turns — lead only acknowledges ("acha",
+    # "haan", "hmm") without answering. After a couple of these Priya stops
+    # explaining and asks a short, direct question to pull them in.
+    backchannel_count: int = 0
+
+    # Consecutive "normal" turns that produced no new qualifying info AND
+    # were short / non-committal. Three of these in a row = not a buyer,
+    # exit warmly. Call 1 went 371s because we had no such counter — lead
+    # kept asking general chemistry questions and Priya kept selling.
+    unproductive_turn_count: int = 0
+
+    # Set once buying signals are firm (pain_point + timeline OR supplier
+    # complaint). The next turn MUST close — no more discovery questions.
+    close_armed: bool = False
+
+    # Phase entry timestamps for telemetry + debugging.
+    phase_entered_at: dict[Phase, float] = field(default_factory=dict)
+
+    def advance_phase_if_due(
+        self,
+        *,
+        elapsed_sec: float,
+        buying_confidence: float,
+    ) -> Phase:
+        """Compute the phase Priya should be in right now. Monotonic — never goes back.
+
+        - <8s: GREETING
+        - 8-35s: CONNECT (rapport, no product questions)
+        - 35-70s: DISCOVER (pain hypothesis floated)
+        - 70-150s: QUALIFY (slot-filling questions interleaved with value statements)
+        - 150-170s: CLOSE (commit-question based on score)
+        - 170-350s: EXTENSION (only if buying_confidence >= 0.6 at 170s)
+        - >350s: CLOSE again (final wrap), 360s = hard stop in pipeline.py
+        """
+        if elapsed_sec < GREETING_END_SEC:
+            target = Phase.GREETING
+        elif elapsed_sec < CONNECT_END_SEC:
+            target = Phase.CONNECT
+        elif elapsed_sec < DISCOVER_END_SEC:
+            target = Phase.DISCOVER
+        elif elapsed_sec < QUALIFY_END_SEC:
+            target = Phase.QUALIFY
+        elif elapsed_sec < CLOSE_END_SEC:
+            target = Phase.CLOSE
+        elif elapsed_sec < EXTENSION_END_SEC:
+            # 170-350s: extend only if real buying signal present.
+            if (
+                self.phase == Phase.EXTENSION
+                or buying_confidence >= EXTENSION_CONFIDENCE_FLOOR
+            ):
+                target = Phase.EXTENSION
+            else:
+                target = Phase.CLOSE
+        else:
+            target = Phase.CLOSE
+
+        # Monotonic advance: never go back to an earlier phase. The one
+        # exception is GREETING → anything (initial transition).
+        if _phase_rank(target) > _phase_rank(self.phase):
+            self.phase = target
+            self.phase_entered_at.setdefault(target, elapsed_sec)
+        return self.phase
+
+    def record_priya_turn(self, text: str) -> None:
+        """Called after Priya speaks. Updates ack tracker + recent buffer + filler audit.
+
+        Filler audit tracks Priya's own filler density — too few fillers in a
+        row and she starts sounding formal/robotic. The lead's fillers are
+        irrelevant to that.
+        """
+        ack = _extract_leading_ack(text)
+        if ack:
+            self.used_acknowledgments.add(ack)
+
+        self.recent_priya_turns.append(text)
+        if len(self.recent_priya_turns) > RECENT_TURNS_WINDOW:
+            self.recent_priya_turns = self.recent_priya_turns[-RECENT_TURNS_WINDOW:]
+
+        self.filler_window.append(_contains_filler(text))
+        if len(self.filler_window) > FILLER_AUDIT_WINDOW:
+            self.filler_window = self.filler_window[-FILLER_AUDIT_WINDOW:]
+
+    def record_lead_turn(self, text: str) -> None:
+        """Append a lead utterance to the rolling window. Empty/whitespace skipped."""
+        t = (text or "").strip()
+        if not t:
+            return
+        self.recent_lead_turns.append(t)
+        if len(self.recent_lead_turns) > RECENT_TURNS_WINDOW:
+            self.recent_lead_turns = self.recent_lead_turns[-RECENT_TURNS_WINDOW:]
+
+    def filler_audit_failing(self) -> bool:
+        """True when the last N Priya turns had fewer than required fillers.
+
+        When True, the next system prompt nudges: "Add a natural filler word
+        like 'ji', 'haan', 'achha' to your next response."
+        """
+        if len(self.filler_window) < FILLER_AUDIT_WINDOW:
+            return False
+        return sum(self.filler_window) < MIN_FILLERS_PER_WINDOW
+
+    def note_close_attempt(self, lead_extended: bool) -> None:
+        """Called in CLOSE/EXTENSION when Priya attempts a wrap-up.
+
+        If the lead keeps talking (lead_extended=True), reset the counter.
+        If Priya tries to close 3 turns in a row and the lead is silent,
+        we force-end to avoid the robot loop.
+        """
+        if lead_extended:
+            self.consecutive_close_attempts = 0
+        else:
+            self.consecutive_close_attempts += 1
+
+    def should_force_end(self) -> bool:
+        """Stop the robot loop of 'anything else?' / 'no' / 'anything else?'
+        OR exit warmly when the lead has spent 3 turns saying nothing useful."""
+        return (
+            self.consecutive_close_attempts >= 3
+            or self.unproductive_turn_count >= 3
+        )
+
+
+def _phase_rank(p: Phase) -> int:
+    return {
+        Phase.GREETING: 0,
+        Phase.CONNECT: 1,
+        Phase.DISCOVER: 2,
+        Phase.QUALIFY: 3,
+        Phase.CLOSE: 4,
+        Phase.EXTENSION: 5,
+    }[p]
+
+
+_ACK_PATTERNS: tuple[str, ...] = (
+    "got it", "understood", "makes sense", "i see", "i understand",
+    "achha", "acha", "theek hai", "sahi", "bilkul", "haan ji",
+    "sari", "aama", "puriyudhu",
+    "right", "okay", "sure", "alright",
+)
+
+
+def _extract_leading_ack(text: str) -> str | None:
+    """Pull the leading acknowledgment from a Priya turn, normalized.
+
+    "Got it. So you handle 500kg per month?" → "got it"
+    "Achha, and what about delivery times?" → "achha"
+    """
+    lower = text.lower().strip()
+    for ack in _ACK_PATTERNS:
+        if lower.startswith(ack):
+            return ack
+    return None
+
+
+def _contains_filler(text: str) -> bool:
+    """True if the Priya turn contains at least one filler word/phrase."""
+    lower = " " + text.lower() + " "
+    for f in FILLERS:
+        # Pad with spaces to avoid matching "okay" inside "okayed".
+        if f" {f} " in lower or f" {f}." in lower or f" {f}," in lower:
+            return True
+    return False
+
+
+def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") -> str:
+    """Per-turn dynamic addendum injected into Priya's system prompt.
+
+    The hints below are language-aware. Earlier the close hint was hard-coded
+    Hindi ("isi number pe WhatsApp pe quote"), which kept leaking Hindi tokens
+    into Tamil replies — exactly what TN leads notice and complain about.
+    """
+    parts: list[str] = []
+
+    parts.append(
+        "<format>ROMAN SCRIPT ONLY. 1-2 sentences. "
+        "Never say your name or company. Never greet.</format>"
+    )
+
+    # Hard language pin per turn. Critical for Tamil: without this the LLM
+    # keeps drifting back to Hindi tokens because the corpus skews that way.
+    if language == "ta-IN":
+        parts.append(
+            "<LANG_PIN>RESPOND IN TANGLISH (Tamil grammar + English business words). "
+            "ZERO HINDI TOKENS. Banned: isi, aa jayega, jayega, deti hoon, "
+            "karte hain, achha, bilkul, theek hai, mai, hum, hain, kijiye, "
+            "bhejna, bhej, toh, abhi. Use clean spellings: sir (not sarr), "
+            "sari (not sariyaa), irukku, tharen, pannuren, sollunga, anuppuren, "
+            "pesalam, kandippa, evlo. Always comma after the opening ack.</LANG_PIN>"
+        )
+        # Override ack filler nudge for Tamil — Hindi fillers sound wrong here.
+        ack_nudge_lang = "sari/aama/enna"
+        close_hint = (
+            "Close in PURE TAMIL: "
+            "'Sari sir, indha number ku WhatsApp la quote varum, "
+            "team call pannuvaanga.' Then thank + stop."
+        )
+        connect_hint = "Ungal company enna line sir? ONE question only, in Tamil."
+        discover_hint = (
+            "Find their pain in Tamil — delivery-aa, rate-aa, quality-aa? "
+            "Tamil only, no Hindi."
+        )
+        qualify_hint = (
+            "Ask volume / timeline / current supplier in Tamil "
+            "(evlo venum, evlo naal, yaaru kitta vangureenga). "
+            "Give ONE value point in Tamil."
+        )
+        ext_hint = "Strong buying signal. Push for the Tamil close NOW."
+    elif language == "en-IN":
+        parts.append(
+            "<LANG_PIN>RESPOND IN INDIAN BUSINESS ENGLISH. "
+            "No Hindi or Tamil tokens unless the lead just used them.</LANG_PIN>"
+        )
+        ack_nudge_lang = "right/sure/got it"
+        close_hint = (
+            "Close: 'Our team will send a quote on WhatsApp to this number, sir.' "
+            "Then thank + stop."
+        )
+        connect_hint = "Ask about their business. ONE question only."
+        discover_hint = "Find their pain — delivery? pricing? quality?"
+        qualify_hint = "Ask volume, timeline, current supplier. Give ONE value point."
+        ext_hint = "Strong signal. Push for close."
+    else:  # hi-IN
+        ack_nudge_lang = "ji/haan/achha"
+        close_hint = (
+            "Close: 'Isi number pe WhatsApp pe quote aa jayega hamare team se.' "
+            "Then thank + stop."
+        )
+        connect_hint = "Ask about their business. ONE question only."
+        discover_hint = "Find their pain — delivery? pricing? quality?"
+        qualify_hint = "Ask volume, timeline, current supplier. Give ONE value point."
+        ext_hint = "Strong signal. Push for close."
+
+    parts.append(f"<current_phase>{state.phase.value}</current_phase>")
+
+    if state.used_acknowledgments:
+        used = ", ".join(sorted(state.used_acknowledgments))
+        parts.append(f"<used_acks>{used}</used_acks>")
+
+    if state.recent_priya_turns:
+        last3 = state.recent_priya_turns[-3:]
+        parts.append(
+            f"<DO_NOT_REPEAT_THESE>\n"
+            + "\n".join(f"- {t}" for t in last3)
+            + "\n</DO_NOT_REPEAT_THESE>"
+            "\nYou MUST say something COMPLETELY DIFFERENT from all of the above."
+        )
+
+    if state.filler_audit_failing():
+        parts.append(f"<nudge>Add filler: {ack_nudge_lang}</nudge>")
+
+    if state.close_armed:
+        parts.append(
+            f"<CLOSE_NOW>Buying signal detected. Do the close THIS TURN. "
+            f"{close_hint}</CLOSE_NOW>"
+        )
+
+    phase_hints = {
+        Phase.CONNECT: connect_hint,
+        Phase.DISCOVER: discover_hint,
+        Phase.QUALIFY: qualify_hint,
+        Phase.CLOSE: close_hint,
+        Phase.EXTENSION: ext_hint,
+    }
+    hint = phase_hints.get(state.phase)
+    if hint:
+        parts.append(f"<phase>{hint}</phase>")
+
+    return "\n\n".join(parts)

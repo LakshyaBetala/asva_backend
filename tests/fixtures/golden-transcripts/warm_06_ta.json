@@ -1,0 +1,18 @@
+{
+  "lang_primary": "ta-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Vanakkam, naan Priya, Supreme Petrochemicals-il irundhu.","lang":"ta-IN"},
+    {"speaker":"lead","text":"Vanakkam, naan procurement head dhaan","lang":"ta-IN"},
+    {"speaker":"agent","text":"Enna chemicals use pannareenga?","lang":"ta-IN"},
+    {"speaker":"lead","text":"Glycerine, monthly 1.5 tonne. Aana supplier neenga kandupidikalaam","lang":"ta-IN"},
+    {"speaker":"agent","text":"Current supplier okay-va?","lang":"ta-IN"},
+    {"speaker":"lead","text":"Okay-thaan. Aana price compare panna interest irukku. Quote anuppunga, paaprom","lang":"ta-IN"}
+  ],
+  "expected": {
+    "classification": "warm",
+    "score_range": [50, 68],
+    "decision_maker": true,
+    "timeline": "exploring",
+    "must_include": {"chemicals": ["glycerine"]}
+  }
+}

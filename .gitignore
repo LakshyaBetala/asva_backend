@@ -1,0 +1,57 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# build outputs
+.next/
+.open-next/
+.turbo/
+.wrangler/
+dist/
+build/
+out/
+.svelte-kit/
+coverage/
+*.tsbuildinfo
+
+# secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+*.secret
+*.secret.json
+secrets/
+
+# supabase local
+.supabase/
+
+# vercel / netlify / wrangler temp
+.vercel/
+.netlify/
+
+# logs
+*.log
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+call-logs.txt
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# editor / IDE
+.idea/
+.vscode/
+*.swp
+
+# Claude Code per-machine session state
+.claude/settings.local.json
+
+# call recordings / large local data
+recordings/
+*.mp3
+*.wav
+*.mp4

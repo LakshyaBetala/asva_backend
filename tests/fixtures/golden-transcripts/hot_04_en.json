@@ -1,0 +1,20 @@
+{
+  "lang_primary": "en-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Namaste, I'm Priya from Supreme Petrochemicals. Is this a good time?","lang":"en-IN"},
+    {"speaker":"lead","text":"Yes, Anita here, procurement at Aqua Treat. We do water treatment chemicals","lang":"en-IN"},
+    {"speaker":"agent","text":"Great. Which chemicals are you sourcing now?","lang":"en-IN"},
+    {"speaker":"lead","text":"Hydrochloric acid, caustic soda, alum. Volumes are 20 tonnes a month combined","lang":"en-IN"},
+    {"speaker":"agent","text":"Any issues with your current supplier?","lang":"en-IN"},
+    {"speaker":"lead","text":"Pricing has gone up 15% this year. We have RFQs going out next month","lang":"en-IN"},
+    {"speaker":"agent","text":"We can include you in that RFQ. Email and best contact time?","lang":"en-IN"},
+    {"speaker":"lead","text":"anita@aquatreat.in, mornings before 11","lang":"en-IN"}
+  ],
+  "expected": {
+    "classification": "hot",
+    "score_range": [80, 95],
+    "decision_maker": true,
+    "timeline": "1-3mo",
+    "must_include": {"chemicals": ["hydrochloric acid", "caustic soda"], "supplier_pain": ["price"]}
+  }
+}

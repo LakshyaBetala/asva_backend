@@ -1,0 +1,20 @@
+{
+  "lang_primary": "en-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Namaste, Priya from Supreme Petrochemicals.","lang":"en-IN"},
+    {"speaker":"lead","text":"Yes, who is this for?","lang":"en-IN"},
+    {"speaker":"agent","text":"We supply industrial chemicals. Are you involved in procurement?","lang":"en-IN"},
+    {"speaker":"lead","text":"I'm the production manager, I influence buying but our MD signs off","lang":"en-IN"},
+    {"speaker":"agent","text":"What chemicals does production use?","lang":"en-IN"},
+    {"speaker":"lead","text":"Acetic acid, around 2 tonnes monthly","lang":"en-IN"},
+    {"speaker":"agent","text":"Current supplier okay?","lang":"en-IN"},
+    {"speaker":"lead","text":"It's fine, no immediate plans to change, but we review yearly","lang":"en-IN"}
+  ],
+  "expected": {
+    "classification": "warm",
+    "score_range": [40, 65],
+    "decision_maker": false,
+    "timeline": "exploring",
+    "must_include": {"chemicals": ["acetic acid"]}
+  }
+}

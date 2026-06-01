@@ -1,0 +1,11 @@
+name = "ai-voice-webhooks"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+[[r2_buckets]]
+binding = "RECORDINGS"
+bucket_name = "ai-voice-recordings"
+
+# secrets set via `wrangler secret put`:
+#   SAMVAAD_WEBHOOK_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+#   SARVAM_API_KEY, SARVAM_BASE_URL, SCORE_WORKER_URL, INTERNAL_API_TOKEN

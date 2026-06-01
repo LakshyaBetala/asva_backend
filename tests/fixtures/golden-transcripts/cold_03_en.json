@@ -1,0 +1,15 @@
+{
+  "lang_primary": "en-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Namaste, Priya from Supreme Petrochemicals.","lang":"en-IN"},
+    {"speaker":"lead","text":"I'm a software engineer, why are you calling me about chemicals?","lang":"en-IN"},
+    {"speaker":"agent","text":"Apologies, we must have the wrong contact. Have a good day.","lang":"en-IN"}
+  ],
+  "expected": {
+    "classification": "cold",
+    "score_range": [0, 15],
+    "decision_maker": false,
+    "timeline": "unknown",
+    "must_include": {"call_quality_flags": ["wrong_number"]}
+  }
+}

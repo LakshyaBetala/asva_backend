@@ -1,0 +1,6 @@
+name = "ai-voice-campaigns"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+# secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SARVAM_API_KEY,
+#          SARVAM_BASE_URL, INTERNAL_API_TOKEN

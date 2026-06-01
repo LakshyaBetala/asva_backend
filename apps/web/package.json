@@ -1,0 +1,41 @@
+{
+  "name": "@ai-voice/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit",
+    "preview": "echo 'Install @opennextjs/cloudflare manually when ready to deploy (see SETUP.md)' && exit 1",
+    "deploy": "echo 'Install @opennextjs/cloudflare manually when ready to deploy (see SETUP.md)' && exit 1"
+  },
+  "dependencies": {
+    "next": "14.2.18",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "@supabase/ssr": "^0.5.1",
+    "@supabase/supabase-js": "^2.45.0",
+    "@ai-voice/db": "workspace:*",
+    "@ai-voice/shared": "workspace:*",
+    "zod": "^3.23.8",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.2",
+    "sonner": "^1.5.0",
+    "lucide-react": "^0.453.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5",
+    "wrangler": "^3.78.0"
+  }
+}

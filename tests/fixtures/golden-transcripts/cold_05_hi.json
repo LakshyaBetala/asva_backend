@@ -1,0 +1,14 @@
+{
+  "lang_primary": "hi-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Namaste, Priya bol rahi hoon Supreme Petrochemicals se.","lang":"hi-IN"},
+    {"speaker":"lead","text":"Main retired hoon, koi chemicals nahi chahiye, galat number hai","lang":"hi-IN"}
+  ],
+  "expected": {
+    "classification": "cold",
+    "score_range": [0, 15],
+    "decision_maker": false,
+    "timeline": "unknown",
+    "must_include": {"call_quality_flags": ["wrong_number"]}
+  }
+}

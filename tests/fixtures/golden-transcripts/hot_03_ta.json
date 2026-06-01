@@ -1,0 +1,20 @@
+{
+  "lang_primary": "ta-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Vanakkam, naan Priya, Supreme Petrochemicals Chennai-il irundhu pesaren. Ungalukku oru nimisham nerum unda?","lang":"ta-IN"},
+    {"speaker":"lead","text":"Sollunga, naan Karthik, Velocity Inks-il procurement-pathi paarkkiren","lang":"ta-IN"},
+    {"speaker":"agent","text":"Nandri Karthik. Neenga indha neram epdi chemicals vaangureenga?","lang":"ta-IN"},
+    {"speaker":"lead","text":"Toluene, ethyl acetate, mathiri solvents. Maasam-ku 6 tonne","lang":"ta-IN"},
+    {"speaker":"agent","text":"Ippo irukkura supplier-oda pricing or delivery-l prachana iruka?","lang":"ta-IN"},
+    {"speaker":"lead","text":"Price kashta-irukku. Niraya delays. Naanga immediately maatha thedaren","lang":"ta-IN"},
+    {"speaker":"agent","text":"Nanga 4 mani neram-ku ulla quote anuppuvom. Email kudunga?","lang":"ta-IN"},
+    {"speaker":"lead","text":"karthik@velocityinks.in nu anuppunga","lang":"ta-IN"}
+  ],
+  "expected": {
+    "classification": "hot",
+    "score_range": [78, 93],
+    "decision_maker": true,
+    "timeline": "now",
+    "must_include": {"chemicals": ["toluene", "ethyl acetate"], "supplier_pain": ["price", "delivery"]}
+  }
+}

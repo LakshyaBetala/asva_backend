@@ -1,0 +1,14 @@
+{
+  "lang_primary": "hi-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Namaste, main Priya hoon Supreme Petrochemicals Chennai se.","lang":"hi-IN"},
+    {"speaker":"lead","text":"Bilkul nahi chahiye, kabhi mat phone karna","lang":"hi-IN"},
+    {"speaker":"agent","text":"Maaf kijiye, dobara phone nahi karenge.","lang":"hi-IN"}
+  ],
+  "expected": {
+    "classification": "cold",
+    "score_range": [0, 15],
+    "decision_maker": false,
+    "timeline": "unknown"
+  }
+}

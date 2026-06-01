@@ -1,0 +1,20 @@
+{
+  "lang_primary": "en-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Namaste, I'm Priya from Supreme Petrochemicals, Chennai. Is this a good time for a quick 30-second conversation?","lang":"en-IN"},
+    {"speaker":"lead","text":"Yes go ahead, I'm Ravi, head of procurement at Acme Pharma","lang":"en-IN"},
+    {"speaker":"agent","text":"Thank you Ravi. We supply industrial chemicals to pharma — may I ask which chemicals you currently source?","lang":"en-IN"},
+    {"speaker":"lead","text":"Mainly glycerine and acetic acid, around 8 tonnes per month combined","lang":"en-IN"},
+    {"speaker":"agent","text":"And how is your current supplier on pricing and delivery?","lang":"en-IN"},
+    {"speaker":"lead","text":"Delivery has been delayed twice this quarter, that hurts production. We're looking at alternatives now","lang":"en-IN"},
+    {"speaker":"agent","text":"That's exactly where our 4-hour quote SLA helps. Can we send you a quote within 4 hours for glycerine and acetic acid?","lang":"en-IN"},
+    {"speaker":"lead","text":"Yes please, email is ravi@acmepharma.in","lang":"en-IN"}
+  ],
+  "expected": {
+    "classification": "hot",
+    "score_range": [80, 95],
+    "decision_maker": true,
+    "timeline": "now",
+    "must_include": {"chemicals": ["glycerine", "acetic acid"], "supplier_pain": ["delivery"]}
+  }
+}

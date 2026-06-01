@@ -1,0 +1,49 @@
+{
+  "name": "SPC Priya",
+  "description": "Outbound qualification agent for Supreme Petrochemicals Chennai",
+  "voice": {
+    "provider": "bulbul",
+    "voice_id": "TBD-select-during-demo",
+    "speaker_gender": "female",
+    "speaking_rate": 1.0,
+    "language_default": "en-IN"
+  },
+  "stt": {
+    "provider": "saaras",
+    "languages": ["en-IN", "hi-IN", "ta-IN"],
+    "telephony_optimized": true
+  },
+  "llm": { "provider": "sarvam", "model": "sarvam-105b", "temperature": 0.4 },
+  "limits": { "max_call_seconds": 180, "soft_close_after_seconds": 170 },
+  "system_prompt_ref": "packages/shared/src/prompts/priya-system.md",
+  "knowledge_base": [
+    { "kind": "csv", "path": "infra/samvaad/kb/products.csv" },
+    { "kind": "markdown", "path": "infra/samvaad/kb/value-prop.md" }
+  ],
+  "metadata_variables": {
+    "lead.first_name": "Provided by campaigns-worker on /agents/:id/calls. Falls back to empty string if missing or below 2 characters.",
+    "lead.company": "Optional, used by agent if mentioned later in conversation."
+  },
+  "first_turn_templates": {
+    "en-IN": "Hello {{lead.first_name}}, this is Priya from Supreme Petrochemicals, Chennai. Is this a good time for a quick 30-second conversation?",
+    "hi-IN": "Namaste {{lead.first_name}} ji, main Priya hoon Supreme Petrochemicals Chennai se. Kya aap 30 second baat kar sakte hain?",
+    "ta-IN": "Vanakkam {{lead.first_name}} avargale, naan Priya, Supreme Petrochemicals Chennai-il irundhu. Ungalukku oru nimisham nerum unda?",
+    "fallback_en-IN": "Namaste, this is Priya from Supreme Petrochemicals, Chennai. Is this a good time?",
+    "fallback_hi-IN": "Namaste, main Priya hoon Supreme Petrochemicals Chennai se. Kya aap 30 second baat kar sakte hain?",
+    "fallback_ta-IN": "Vanakkam, naan Priya, Supreme Petrochemicals Chennai-il irundhu. Ungalukku oru nimisham nerum unda?"
+  },
+  "language_policy": {
+    "auto_switch": true,
+    "supported": ["en-IN", "hi-IN", "ta-IN"],
+    "ambiguity_prompt": "Should we continue in English, Hindi, or Tamil?"
+  },
+  "webhook": {
+    "url": "https://ai-voice-webhooks.<your-cf-subdomain>.workers.dev/samvaad",
+    "events": [
+      "call.started", "call.answered", "transcript.chunk",
+      "call.ended", "recording.ready"
+    ],
+    "shared_secret_env": "SAMVAAD_WEBHOOK_SECRET"
+  },
+  "telephony": { "provider": "exotel", "caller_id_env": "EXOTEL_CALLER_ID" }
+}

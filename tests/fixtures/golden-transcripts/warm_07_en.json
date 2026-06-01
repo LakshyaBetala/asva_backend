@@ -1,0 +1,17 @@
+{
+  "lang_primary": "en-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Hi, Priya from Supreme Petrochemicals.","lang":"en-IN"},
+    {"speaker":"lead","text":"Yes I handle procurement for RubberWorks","lang":"en-IN"},
+    {"speaker":"agent","text":"What chemicals do you source?","lang":"en-IN"},
+    {"speaker":"lead","text":"Zinc oxide, carbon black, sulphur. We're locked in with a 2-year contract though","lang":"en-IN"},
+    {"speaker":"agent","text":"Understood. When does the contract end?","lang":"en-IN"},
+    {"speaker":"lead","text":"July 2027. Send a profile, we'll revisit then","lang":"en-IN"}
+  ],
+  "expected": {
+    "classification": "warm",
+    "score_range": [30, 50],
+    "decision_maker": true,
+    "timeline": "exploring"
+  }
+}

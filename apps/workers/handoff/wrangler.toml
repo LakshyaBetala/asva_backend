@@ -1,0 +1,6 @@
+name = "ai-voice-handoff"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+# secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, INTERNAL_API_TOKEN,
+#          APP_BASE_URL, RESEND_API_KEY, RESEND_FROM

@@ -1,0 +1,14 @@
+{
+  "lang_primary": "ta-IN",
+  "transcript": [
+    {"speaker":"agent","text":"Vanakkam, naan Priya, Supreme Petrochemicals-il irundhu.","lang":"ta-IN"},
+    {"speaker":"lead","text":"Enakku interest illa, please disturb panna venam","lang":"ta-IN"},
+    {"speaker":"agent","text":"Sari, nandri. Indha number-ku phone pannamaaten.","lang":"ta-IN"}
+  ],
+  "expected": {
+    "classification": "cold",
+    "score_range": [0, 15],
+    "decision_maker": false,
+    "timeline": "unknown"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "lang_primary": "en-IN",
+  "notes": "voicemail detected — call.ended with status voicemail; transcript is just the prompt + voicemail beep noise",
+  "transcript": [
+    {"speaker":"agent","text":"Namaste, I'm Priya from Supreme Petrochemicals, please call us back at 044-...","lang":"en-IN"}
+  ],
+  "expected": {
+    "classification": "cold",
+    "score_range": [0, 25],
+    "decision_maker": false,
+    "timeline": "unknown",
+    "must_include": {"call_quality_flags": ["voicemail"]}
+  }
+}

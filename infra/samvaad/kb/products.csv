@@ -1,0 +1,29 @@
+category,name,grade,typical_use
+# TODO: replace with SPC's full 250-product catalogue. Below is a starter seed of headline products.
+acids,Acetic Acid,Industrial,Solvent / pharma intermediate
+acids,Hydrochloric Acid,Industrial,Water treatment / metal cleaning
+acids,Sulphuric Acid,Industrial,Battery / fertilizer
+acids,Nitric Acid,Industrial,Explosives / fertilizer
+alcohols,Methanol,Industrial,Solvent / fuel additive
+alcohols,Ethanol,Industrial,Solvent / sanitizer
+alcohols,Isopropyl Alcohol,Pharma,Disinfectant / pharma
+solvents,Toluene,Industrial,Paints / adhesives
+solvents,Xylene,Industrial,Paints / printing inks
+solvents,Acetone,Industrial,Solvent / cosmetics
+solvents,Ethyl Acetate,Industrial,Inks / coatings
+glycols,Ethylene Glycol,Industrial,Coolants / polyester
+glycols,Propylene Glycol,Pharma,Pharma / food / cosmetics
+glycols,Polyethylene Glycol,Pharma,Pharma / cosmetics
+plasticizers,DOP (Dioctyl Phthalate),Industrial,PVC plasticizer
+plasticizers,DBP (Dibutyl Phthalate),Industrial,Adhesives / plasticizer
+powders,Titanium Dioxide,Industrial,Pigment / paints / cosmetics
+powders,Calcium Carbonate,Industrial,Filler / paints / plastics
+powders,Silica,Industrial,Rubber / coatings
+specialty,Glycerine,Pharma,Pharma / cosmetics / food
+specialty,Caustic Soda,Industrial,Soap / textiles / pulp
+specialty,Sodium Bicarbonate,Food,Food / pharma
+specialty,Citric Acid,Food,Food / beverages
+specialty,Hydrogen Peroxide,Industrial,Bleaching / disinfectant
+specialty,Zinc Oxide,Industrial,Rubber / cosmetics
+specialty,Carbon Black,Industrial,Rubber / inks
+specialty,Sulphur,Industrial,Rubber / agriculture

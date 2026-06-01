@@ -1,0 +1,21 @@
+{
+  "lang_primary": "en-IN",
+  "notes": "lead switches from English to Hindi mid-call; agent follows",
+  "transcript": [
+    {"speaker":"agent","text":"Namaste, I'm Priya from Supreme Petrochemicals. Is this a good time?","lang":"en-IN"},
+    {"speaker":"lead","text":"Haan ji, thoda Hindi mein baat karte hain. Main Vikram, Madras Auto se","lang":"hi-IN"},
+    {"speaker":"agent","text":"Zaroor Vikram ji. Aap kya manufacture karte hain?","lang":"hi-IN"},
+    {"speaker":"lead","text":"Auto parts. Hum glycols aur ethylene glycol use karte hain, har mahine 4 tonne","lang":"hi-IN"},
+    {"speaker":"agent","text":"Current supplier kaisa hai?","lang":"hi-IN"},
+    {"speaker":"lead","text":"Delivery thik nahi hai. Hum is week nayi quotes le rahe hain","lang":"hi-IN"},
+    {"speaker":"agent","text":"4 ghante mein quote bhej sakte hain. WhatsApp number?","lang":"hi-IN"},
+    {"speaker":"lead","text":"+91 98765 67000","lang":"hi-IN"}
+  ],
+  "expected": {
+    "classification": "hot",
+    "score_range": [75, 90],
+    "decision_maker": true,
+    "timeline": "now",
+    "must_include": {"chemicals": ["glycols", "ethylene glycol"], "supplier_pain": ["delivery"]}
+  }
+}

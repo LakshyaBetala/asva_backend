@@ -1,0 +1,21 @@
+{
+  "name": "@ai-voice/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "libphonenumber-js": "^1.11.7",
+    "papaparse": "^5.5.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/papaparse": "^5.5.2",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@ai-voice/webhooks-worker",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.5.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "@ai-voice/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0",
+    "@cloudflare/workers-types": "^4.20240909.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
