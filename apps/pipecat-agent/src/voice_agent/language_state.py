@@ -83,6 +83,29 @@ _HINDI_MARKERS: frozenset[str] = frozenset({
 _MARKER_MIN_WORDS: int = 3
 
 
+# Unicode script ranges. The presence of even one Tamil or Devanagari
+# character is a high-precision lang signal — way more reliable than
+# Sarvam's `lang_code` field, which mislabels Tamil audio as hi-IN when
+# the request hint was hi-IN. Run BEFORE marker scan + STT tag.
+_TAMIL_SCRIPT_RE = re.compile(r"[஀-௿]")
+_DEVANAGARI_RE = re.compile(r"[ऀ-ॿ]")
+
+
+def _script_override(text: str) -> Lang | None:
+    """Detect language from Unicode script in the transcript.
+
+    Tamil (U+0B80-U+0BFF) and Devanagari (U+0900-U+097F) are unambiguous
+    signals — a single character is enough. Returns None for ASCII-only
+    text (could be English, romanized Hindi, or romanized Tamil — falls
+    through to STT tag / marker scan).
+    """
+    if _TAMIL_SCRIPT_RE.search(text):
+        return Lang.TA
+    if _DEVANAGARI_RE.search(text):
+        return Lang.HI
+    return None
+
+
 def _marker_override(text: str) -> Lang | None:
     """Whole-word marker scan that overrides Sarvam's STT lang tag.
 
@@ -207,6 +230,20 @@ class LanguageState:
         trigger_lang = self._detect_trigger(utt.text)
         if trigger_lang and trigger_lang != self.current:
             return self._flip(trigger_lang, "explicit")
+
+        # Unicode-script override: Tamil/Devanagari characters in the
+        # transcript are decisive regardless of STT confidence or lang_code.
+        # This catches the very common case of Sarvam tagging Tamil audio
+        # as hi-IN when the request hint was hi-IN (the script in the text
+        # tells the truth even when the label lies).
+        script = _script_override(utt.text)
+        if script is not None:
+            if script != self.current:
+                return self._flip(script, "explicit")
+            # Same as current — reset any drifting pending counter and stop.
+            self.pending_lang = None
+            self.pending_count = 0
+            return Transition(self.current, False, "none", None)
 
         # Marker-token override: if morphology unambiguously identifies a
         # language (e.g. "pesunga"/"irukku" = Tamil, "kijiye"/"bilkul" = Hindi),

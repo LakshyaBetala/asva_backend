@@ -236,12 +236,13 @@ def persist_turn_async(
     used_intro_cache: bool = False,
 ) -> None:
     """Schedule all per-turn DB writes. Safe to call with db=None (no-op).
-    Also no-ops if call_id is not a real UUID — the agent supports trial
-    calls without a backing leads row, and those would otherwise spam 22P02
-    errors on every turn."""
+    No-ops unless call_id, tenant_id, and lead_id are all real UUIDs —
+    the agent supports trial calls without a backing leads/tenant row
+    (e.g. `default-tenant` sentinel), and those would otherwise spam
+    22P02 (bad uuid) or 23503 (FK miss) errors on every turn."""
     if db is None:
         return
-    if not _is_uuid(call_id):
+    if not (_is_uuid(call_id) and _is_uuid(tenant_id) and _is_uuid(lead_id)):
         return
 
     async def _run() -> None:

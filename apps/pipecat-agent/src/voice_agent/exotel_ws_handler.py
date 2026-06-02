@@ -353,6 +353,22 @@ async def trigger_outbound_call(req: PlaceCallRequest) -> PlaceCallResponse:
     global _last_pending_call_id
     _last_pending_call_id = call_id
 
+    # Insert the calls row NOW so per-turn transcripts have a valid FK target.
+    # insert_call() self-skips unless all three of call_id/tenant_id/lead_id
+    # are real UUIDs, so ad-hoc trial calls (default-tenant sentinel) remain
+    # a no-op and don't spam 23503 errors mid-call.
+    if db is not None:
+        _ins_task = asyncio.create_task(
+            db.insert_call(
+                call_id=call_id,
+                tenant_id=req.tenant_id,
+                lead_id=req.lead_id or call_id,
+                lang=req.lang_hint,
+            )
+        )
+        _bg_tasks.add(_ins_task)
+        _ins_task.add_done_callback(_bg_tasks.discard)
+
     # Pre-synthesize the intro NOW, while the phone is still ringing, so the
     # first word plays the instant the stream opens — no dead air the lead
     # could mistake for a spam "second ring".
@@ -702,6 +718,15 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                             "call_id=%s exotel hangup sent (call_sid=%s)",
                             call_id, active.exotel_call_sid,
                         )
+                except ExotelError as exc:
+                    # Non-fatal: the WS close that follows still terminates the
+                    # carrier leg cleanly. Most "Method not allowed" responses
+                    # mean the API key lacks call-management scope — the
+                    # account-level fix is in the Exotel dashboard, not here.
+                    logger.warning(
+                        "exotel hangup REST failed (%s); WS close will end the call",
+                        exc,
+                    )
                 except Exception:
                     logger.exception("exotel hangup failed (continuing to WS close)")
                 break

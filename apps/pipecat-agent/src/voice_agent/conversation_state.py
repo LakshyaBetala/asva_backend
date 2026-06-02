@@ -218,10 +218,13 @@ class ConversationState:
 
     def should_force_end(self) -> bool:
         """Stop the robot loop of 'anything else?' / 'no' / 'anything else?'
-        OR exit warmly when the lead has spent 3 turns saying nothing useful."""
+        OR exit warmly when the lead has spent 5 turns saying nothing useful.
+
+        Threshold raised from 3 → 5: terse cold-call openers in Tamil/Hindi
+        (1-3 word replies) are normal warm behaviour, not tire-kicking."""
         return (
             self.consecutive_close_attempts >= 3
-            or self.unproductive_turn_count >= 3
+            or self.unproductive_turn_count >= 5
         )
 
 

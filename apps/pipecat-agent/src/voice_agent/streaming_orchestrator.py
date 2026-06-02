@@ -335,6 +335,15 @@ async def run_turn_streaming(
             or prior_slots.current_supplier
             or (prior_slots.timeline_days is not None)
         )
+        # Cheap text-level signal: if the lead's reply contains an industry
+        # word (pharma, paints, plastics, etc. — or Tamil/Hindi script
+        # equivalents), it's NOT unproductive even if the slot extractor
+        # hasn't run yet. This protects warm-but-terse leads who say
+        # "ஃபார்மாவில் இருக்கேன்" / "pharma mein hai" — true info,
+        # but only 2-3 space-separated tokens.
+        if not produced_info and _mentions_industry(stt_result.transcript):
+            produced_info = True
+
         if word_count < 6 and not produced_info:
             ctx.conversation_state.unproductive_turn_count += 1
         else:
@@ -495,6 +504,43 @@ _INDIC_SCRIPT_RE = re.compile(
     r"[ऀ-ॿঀ-৿઀-૿஀-௿ఀ-౿"
     r"ಀ-೿ഀ-ൿ଀-୿਀-੿]"
 )
+
+
+# Industry/sector words that count as "produced info" even when the lead
+# reply is otherwise terse. Lowercase ASCII matches romanized speech and
+# English; the unicode patterns catch native-script mentions ("ஃபார்மா").
+# Keep these high-signal — don't add common verbs/adjectives.
+_INDUSTRY_ASCII = frozenset({
+    "pharma", "pharmaceutical", "pharmaceuticals", "paint", "paints",
+    "coating", "coatings", "adhesive", "adhesives", "plastic", "plastics",
+    "polymer", "polymers", "rubber", "textile", "textiles", "leather",
+    "automotive", "auto", "food", "beverage", "beverages", "cosmetic",
+    "cosmetics", "detergent", "detergents", "cleaning", "construction",
+    "agro", "agri", "agriculture", "fertilizer", "fertilizers", "ink",
+    "inks", "printing", "packaging", "lubricant", "lubricants",
+    "petrochemical", "petrochemicals", "chemical", "chemicals", "soap",
+    "personal care", "homecare", "industrial", "manufacturing",
+})
+_INDUSTRY_SCRIPT_RE = re.compile(
+    r"ஃபார்மா|ஃபார்ம|பெயிண்|பெயின்ட|ப்ளாஸ்டிக|ரப்பர|"  # Tamil
+    r"फार्मा|पेंट|प्लास्टिक|रबर|कोटिंग|"  # Hindi
+    r"फार्मा|पेंट"
+)
+
+
+def _mentions_industry(text: str | None) -> bool:
+    """True when the lead's transcript names an industry/sector — useful
+    "produced info" signal for the unproductive-turn counter even when the
+    LLM slot extractor hasn't run yet."""
+    if not text:
+        return False
+    lower = text.lower()
+    for token in _INDUSTRY_ASCII:
+        if token in lower:
+            return True
+    if _INDUSTRY_SCRIPT_RE.search(text):
+        return True
+    return False
 
 
 def _looks_like_line_noise(text: str, *, lang: str) -> bool:
@@ -888,10 +934,13 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
             else:
                 parts.append('Lead off-topic. Probe ONCE: "Sir, koi chemicals ya industrial supply ki requirement hai aapke business mein?"')
     else:
-        # ---- Tire-kicker exit (3 unproductive turns in a row) ----
-        # Call 1 in production went 371s/18 turns with a lead who never gave
-        # product/volume/timeline; Priya kept selling. End it warmly instead.
-        if conv.unproductive_turn_count >= 3:
+        # ---- Tire-kicker exit (5 unproductive turns in a row) ----
+        # Threshold was 3 — too aggressive for Tamil/Hindi cold calls where
+        # a real buyer often opens with 1-3 word replies ("haan", "achha",
+        # "in pharma") before warming up. 5 gives the lead a fair chance to
+        # surface a slot. We also stop counting turns where the lead names
+        # an industry — see _mentions_industry().
+        if conv.unproductive_turn_count >= 5:
             if lang == "ta-IN":
                 exit_phrase = (
                     "Sari sir, ungalukku enna venum-nu confirm aana, SPC ku "

@@ -87,9 +87,14 @@ async def transcribe_batch(
         raise SarvamSTTError("missing SARVAM_API_KEY")
 
     files = {"file": (filename, io.BytesIO(audio), content_type)}
-    data: dict[str, str] = {"model": model}
-    if language_hint:
-        data["language_code"] = language_hint
+    # Sarvam's /speech-to-text requires language_code. Pass "unknown" when
+    # the caller doesn't supply a hint so Saaras runs full auto-detect —
+    # otherwise short ASR clips (like "Hello") get region-biased to hi-IN
+    # and the language_state machine never sees the English signal.
+    data: dict[str, str] = {
+        "model": model,
+        "language_code": language_hint or "unknown",
+    }
 
     owns_client = client is None
     http = client or httpx.AsyncClient(timeout=timeout)

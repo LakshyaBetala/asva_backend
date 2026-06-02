@@ -15,13 +15,16 @@ param(
 # Normalise lang shortcuts so Tamil calls are one keystroke.
 $lcLang = $Lang.ToLower()
 switch ($lcLang) {
-    "ta"    { $Lang = "ta-IN" }
-    "tamil" { $Lang = "ta-IN" }
-    "hi"    { $Lang = "hi-IN" }
-    "hindi" { $Lang = "hi-IN" }
-    "en"    { $Lang = "en-IN" }
+    "ta"      { $Lang = "ta-IN" }
+    "tamil"   { $Lang = "ta-IN" }
+    "ta-in"   { $Lang = "ta-IN" }
+    "hi"      { $Lang = "hi-IN" }
+    "hindi"   { $Lang = "hi-IN" }
+    "hi-in"   { $Lang = "hi-IN" }
+    "en"      { $Lang = "en-IN" }
     "english" { $Lang = "en-IN" }
-    default { $Lang = $lcLang }
+    "en-in"   { $Lang = "en-IN" }
+    default   { $Lang = $lcLang }
 }
 if ($Lang -notin @("hi-IN", "ta-IN", "en-IN")) {
     Write-Host "Unsupported lang '$Lang'. Use ta / hi / en (or ta-IN / hi-IN / en-IN)." -ForegroundColor Red
