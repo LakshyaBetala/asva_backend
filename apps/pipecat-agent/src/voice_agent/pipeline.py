@@ -83,6 +83,10 @@ class CallContext:
     lead_company: str | None
     started_at_monotonic: float
     language_state: LanguageState
+    # Drives per-turn prompt selection. Set from tenant.industry_key at boot;
+    # defaults to chemicals so legacy call paths (tests, local harness without
+    # explicit tenant resolution) still produce a usable system prompt.
+    industry_key: str = "chemicals"
     conversation_state: ConversationState = field(default_factory=ConversationState)
     turn_idx: int = 0
     used_intro_cache: bool = False
@@ -138,6 +142,7 @@ def make_initial_context(
     lead_first_name: str | None,
     lead_company: str | None,
     default_lang: str,
+    industry_key: str = "chemicals",
 ) -> CallContext:
     return CallContext(
         call_id=call_id,
@@ -147,12 +152,13 @@ def make_initial_context(
         lead_company=lead_company,
         started_at_monotonic=time.monotonic(),
         language_state=LanguageState.initial(Lang(default_lang)),
+        industry_key=industry_key,
     )
 
 
 def render_system_message_for_turn(ctx: CallContext) -> str:
     """Called once per LLM turn so <current_language> is always fresh."""
-    base = load_priya_prompt()
+    base = load_priya_prompt(ctx.industry_key)
     return build_system_message(
         base_prompt=base,
         current_language=ctx.language_state.current.value,

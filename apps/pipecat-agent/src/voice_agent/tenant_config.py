@@ -110,13 +110,60 @@ _SEED: dict[str, TenantConfig] = {
         default_lang="hi-IN",
         voice_id_en="emily",
         voice_id_hi="anushka",
-        voice_id_ta="anushka",
+        voice_id_ta="anushka",  # unused for brokers — see real_estate brain
         industry_key="real_estate",
+        # Pronunciation hints drive Sarvam Bulbul TTS phoneme bias for
+        # Indian property nouns. Mapped values use the spelling shape the
+        # TTS already pronounces well; the engine substitutes on render.
+        # Keep these *short* — long substitutions break the prosody.
         pronunciation_pack={
+            # Common terms
+            "BHK": "B-H-K",
+            "sqft": "square feet",
+            "Cr": "crore",
+            "L": "lakh",
+            "EMI": "E-M-I",
+            "OC": "O-C",
+            "RERA": "Rera",
+            # Mumbai
             "Bandra": "Baandra",
             "Powai": "Pow-eye",
             "Andheri": "And-heri",
-            "BHK": "B-H-K",
+            "Juhu": "Joo-hoo",
+            "Vikhroli": "Vik-roli",
+            "Ghatkopar": "Ghat-ko-par",
+            "Worli": "Vorli",
+            "Chembur": "Chem-bur",
+            "Goregaon": "Gore-gaon",
+            "Mulund": "Mu-lund",
+            "Kandivali": "Kandi-vali",
+            "Borivali": "Bori-vali",
+            # Pune
+            "Koregaon": "Kore-gaon",
+            "Hinjewadi": "Hin-jay-vaadi",
+            "Wakad": "Wa-kad",
+            "Magarpatta": "Magar-patta",
+            "Kharadi": "Kha-raadi",
+            "Kothrud": "Koth-rud",
+            # Bangalore
+            "Whitefield": "White-field",
+            "Koramangala": "Kora-mangala",
+            "Indiranagar": "Indira-nagar",
+            "Banashankari": "Bana-shankari",
+            "Jayanagar": "Jaya-nagar",
+            "Bellandur": "Bel-landur",
+            "Sarjapur": "Sar-japur",
+            "Yelahanka": "Yela-hanka",
+            # Hyderabad
+            "Banjara": "Banjaaraa",
+            "Jubilee": "Joo-bilee",
+            "Madhapur": "Madha-pur",
+            "Kondapur": "Konda-pur",
+            "Gachibowli": "Gachi-bowli",
+            "Kukatpally": "Kukat-pally",
+            "Hitech": "High-tech",
+            "Hyderabad": "Hai-derabad",
+            "Secunderabad": "Secunder-abad",
         },
     ),
 }

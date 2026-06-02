@@ -366,6 +366,7 @@ async def trigger_outbound_call(req: PlaceCallRequest) -> PlaceCallResponse:
         lead_first_name=req.lead_first_name,
         lead_company=req.lead_company,
         default_lang=req.lang_hint,
+        industry_key=tenant.industry_key,
     )
     db = _build_db_client()
     active = _ActiveCall(

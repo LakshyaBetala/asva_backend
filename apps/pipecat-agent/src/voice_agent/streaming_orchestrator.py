@@ -280,7 +280,7 @@ async def run_turn_streaming(
     # ---- 3. Language flip — no bridge phrase, just switch silently ------
 
     # ---- 4. Build system message (same as sequential) ------------------
-    base_prompt = _cached_prompt()
+    base_prompt = _cached_prompt(ctx.industry_key)
     system_msg = build_system_message(
         base_prompt=base_prompt,
         current_language=transition.current_language.value,
@@ -491,12 +491,9 @@ async def run_turn_streaming(
 
 # -- Helpers (same as turn_orchestrator) ------------------------------------
 
-_PROMPT_CACHE: str = ""
-
-def _cached_prompt() -> str:
-    global _PROMPT_CACHE
-    _PROMPT_CACHE = load_priya_prompt()
-    return _PROMPT_CACHE
+def _cached_prompt(industry_key: str = "chemicals") -> str:
+    """Per-industry base prompt. load_priya_prompt() does the caching."""
+    return load_priya_prompt(industry_key)
 
 
 _INDIC_SCRIPT_RE = re.compile(

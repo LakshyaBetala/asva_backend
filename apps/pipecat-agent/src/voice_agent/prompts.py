@@ -24,23 +24,44 @@ from pathlib import Path
 from voice_agent.industry import get_brain
 from voice_agent.tenant_config import TenantConfig
 
-# Resolved at import time. Override in tests via load_priya_prompt(path=...).
-_DEFAULT_PROMPT_PATH = (
-    Path(__file__).resolve().parents[4]
-    / "packages"
-    / "shared"
-    / "src"
-    / "prompts"
-    / "priya-system.md"
+# Per-industry prompt file mapping. Each tenant's industry_key picks one;
+# unmapped keys fall back to the chemicals prompt for safety (SPC behavior
+# is the known-good baseline). Override resolution in tests via load_path.
+_PROMPTS_DIR = (
+    Path(__file__).resolve().parents[4] / "packages" / "shared" / "src" / "prompts"
 )
+_PROMPT_FILES: dict[str, str] = {
+    "chemicals": "priya-system.md",
+    "real_estate": "priya-real-estate.md",
+}
+_DEFAULT_INDUSTRY = "chemicals"
+
+# In-process cache keyed by industry — each prompt file loads once per process.
+_PROMPT_CACHE: dict[str, str] = {}
 
 _PLACEHOLDER_RE = re.compile(r"^(unknown|n/?a|test|na)$", re.IGNORECASE)
 
 
-def load_priya_prompt(path: Path | None = None) -> str:
-    """Read priya-system.md as the base system prompt."""
-    p = path or _DEFAULT_PROMPT_PATH
-    return p.read_text(encoding="utf-8")
+def load_priya_prompt(
+    industry_key: str = _DEFAULT_INDUSTRY,
+    *,
+    path: Path | None = None,
+) -> str:
+    """Load the per-industry base prompt.
+
+    `industry_key` maps to a markdown file under packages/shared/src/prompts/.
+    Unknown industries fall back to chemicals (SPC), matching the safe-default
+    posture used elsewhere. Pass an explicit `path` to override (tests).
+    """
+    if path is not None:
+        return path.read_text(encoding="utf-8")
+    cached = _PROMPT_CACHE.get(industry_key)
+    if cached is not None:
+        return cached
+    filename = _PROMPT_FILES.get(industry_key, _PROMPT_FILES[_DEFAULT_INDUSTRY])
+    text = (_PROMPTS_DIR / filename).read_text(encoding="utf-8")
+    _PROMPT_CACHE[industry_key] = text
+    return text
 
 
 def is_usable_first_name(name: str | None) -> bool:

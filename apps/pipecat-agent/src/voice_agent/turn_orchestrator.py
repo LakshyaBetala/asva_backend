@@ -132,7 +132,7 @@ async def run_turn(
     )
 
     # ---- 4. Build per-turn system message ------------------------------
-    base_prompt = load_priya_prompt()
+    base_prompt = load_priya_prompt(ctx.industry_key)
     system_msg = build_system_message(
         base_prompt=base_prompt,
         current_language=transition.current_language.value,
