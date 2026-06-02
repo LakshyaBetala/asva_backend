@@ -6,13 +6,23 @@ startup and inject `<current_language>...</current_language>` per turn
 so the LLM stops drifting back to the prior-language context after a
 state-machine switch.
 
-This module also provides the intro-text builder, mirroring
-`packages/shared/src/intro-cache.ts::buildIntroText()`.
+The intro-text builder reads from the per-call TenantConfig + IndustryBrain,
+so a chemicals tenant gets "Supreme Petrochemicals" and a real-estate
+tenant gets the broker pitch — same code path, different config row.
+
+Parity note: packages/shared/src/intro-cache.ts is the TS twin used by
+the web/Node cache. Until that's migrated to tenant-aware lookup, the
+TS side returns the legacy SPC strings. The Python runtime is the source
+of truth for what Exotel actually plays; the TS cache is a hot-path
+optimization that falls back to live synth on miss.
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
+
+from voice_agent.industry import get_brain
+from voice_agent.tenant_config import TenantConfig
 
 # Resolved at import time. Override in tests via load_priya_prompt(path=...).
 _DEFAULT_PROMPT_PATH = (
@@ -40,26 +50,45 @@ def is_usable_first_name(name: str | None) -> bool:
     return len(trimmed) >= 2 and not _PLACEHOLDER_RE.match(trimmed)
 
 
-def build_intro_text(*, lang: str, first_name: str | None) -> str:
-    """Mirrors buildIntroText() in packages/shared/src/intro-cache.ts.
+def build_intro_text(
+    *,
+    tenant: TenantConfig,
+    lang: str,
+    first_name: str | None,
+) -> str:
+    """Render the opening line for this tenant + language + lead.
 
-    Keep these two functions in sync — if they drift, the cached audio
-    won't match what the agent thinks it said.
+    The industry brain owns the language-specific template (with a
+    `{name}` placeholder); this function fills the name slot. A usable
+    first name produces "Haan Naman ji, namaste! ..."; an empty/placeholder
+    name swaps in a neutral honorific ("Namaste sir! ...").
     """
     name = first_name.strip() if is_usable_first_name(first_name) else ""
-    # Keep openers SHORT — a snappy hello + who + a quick ask. A long
-    # monologue intro sounds robotic and eats the first 8 seconds.
-    if lang == "en-IN":
-        who = f"Hi {name}, " if name else "Hi, "
-        return f"{who}this is Priya from Supreme Petrochemicals, Chennai. Got two minutes?"
-    if lang == "hi-IN":
-        who = f"Haan {name} ji, namaste! " if name else "Namaste sir! "
-        return f"{who}Main Priya, Supreme Petrochemicals Chennai se. Do minute baat ho sakti hai?"
-    # ta-IN — clean Tamil spellings that Sarvam's bulbul ta-IN model pronounces
-    # naturally. "sarr"/"sariyaa" were over-stressed by the TTS; "sir"/"sari"
-    # land cleanly in the Tamil voice. "pesalama" stays as the standard form.
-    who = f"Vanakkam {name} sir, " if name else "Vanakkam sir, "
-    return f"{who}naan Priya, Supreme Petrochemicals Chennai-la irundhu. Rendu nimisham pesalama?"
+    brain = get_brain(tenant.industry_key)
+    template = brain.intro_template(lang, tenant)
+
+    # Swap the `{name}` slot. The placeholder is followed by a space + the
+    # next word in the template ("Haan {name} ji"), so an empty name leaves
+    # a double-space — fix that in one pass.
+    if name:
+        rendered = template.replace("{name}", name)
+    else:
+        # Drop "{name} " entirely. Falls back to a neutral honorific phrase
+        # in the template if present, else just removes the slot cleanly.
+        rendered = (
+            template.replace("{name} ", "")
+            .replace(" {name}", "")
+            .replace("{name}", "")
+        )
+        # Per-lang neutral lead-in when the template's opener was name-shaped.
+        if lang == "hi-IN" and rendered.startswith("Haan ji"):
+            rendered = rendered.replace("Haan ji, namaste!", "Namaste sir!", 1)
+        elif lang == "en-IN" and rendered.startswith("Hi, "):
+            pass  # already neutral
+        elif lang == "ta-IN" and rendered.startswith("Vanakkam sir"):
+            pass  # already neutral
+
+    return rendered
 
 
 def build_system_message(

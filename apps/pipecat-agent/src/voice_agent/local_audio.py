@@ -633,7 +633,11 @@ async def run_local(args: argparse.Namespace) -> None:
         # ---- PRIYA STARTS FIRST (like a real outbound call) ----
         # On a real call, Priya delivers the intro BEFORE the lead speaks.
         from .prompts import build_intro_text
-        intro_text = build_intro_text(lang=args.lang, first_name=args.lead_name)
+        from .tenant_config import get_tenant
+        tenant_cfg = get_tenant(args.tenant_id)
+        intro_text = build_intro_text(
+            tenant=tenant_cfg, lang=args.lang, first_name=args.lead_name,
+        )
         print(f"  PRIYA (intro): Synthesizing...")
         try:
             intro_audio = await deps.tts.synth(intro_text, args.lang)
@@ -727,7 +731,7 @@ def main() -> None:
     p.add_argument("--lang", default="hi-IN", choices=["hi-IN", "en-IN", "ta-IN"])
     p.add_argument("--lead-name", default="Suresh")
     p.add_argument("--lead-company", default="Acme Chemicals")
-    p.add_argument("--tenant-id", default="local-test-tenant")
+    p.add_argument("--tenant-id", default="spc-tenant")
     p.add_argument("--list-devices", action="store_true", help="List audio devices and exit")
     p.add_argument("--device", type=int, default=None, help="Input device index (from --list-devices)")
     p.add_argument("--record-seconds", type=float, default=8.0, help="Auto-record duration (0=press-enter mode)")

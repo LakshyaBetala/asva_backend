@@ -48,6 +48,7 @@ from .exotel_transport import (
 from .pipeline import HARD_CAP_SECONDS, CallContext, make_initial_context
 from .prompts import build_intro_text
 from .qualification import QualificationSlots
+from .tenant_config import TenantConfig, TenantNotFound, get_tenant
 from .r2_client import R2Client, R2Config, R2ConfigError
 from .streaming_orchestrator import (
     AudioChunkEvent,
@@ -105,6 +106,11 @@ class _ActiveCall:
     ctx: CallContext
     slots: QualificationSlots
     deps: TurnDependencies
+    # Resolved once at trigger time so every WS-side branch (intro fallback,
+    # mid-call prompt rebuild, end-of-call hook) has the same view of who
+    # this agent is. Never None for an active call — trigger refuses to
+    # register the call without a valid tenant.
+    tenant: TenantConfig | None = None
     db: AgentSupabaseClient | None = None
     # Intro audio pre-synthesized at dial time (during the ring) so there is
     # zero dead air after pickup — the gap the lead perceived as a spam "second
@@ -296,7 +302,10 @@ class PlaceCallRequest(BaseModel):
     lead_first_name: str | None = None
     lead_company: str | None = None
     lang_hint: str = "hi-IN"
-    tenant_id: str = "default-tenant"
+    # Required — resolved via tenant_config.get_tenant() at trigger time. An
+    # unknown id rejects the call with 400 (we never silently fall back to
+    # a default tenant — that's how SPC strings used to leak into other clients).
+    tenant_id: str = Field(..., description="Resolves to TenantConfig at boot")
     lead_id: str | None = None
 
 
@@ -328,6 +337,17 @@ async def trigger_outbound_call(req: PlaceCallRequest) -> PlaceCallResponse:
             "EXOTEL_FLOW_URL must be set",
         )
 
+    # Resolve tenant FIRST — a bad tenant_id is the kind of failure we want
+    # loud (400 returned synchronously), not silent (call dialed with the
+    # wrong agent identity). Never falls back to a default tenant.
+    try:
+        tenant = get_tenant(req.tenant_id)
+    except TenantNotFound as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"unknown tenant_id={req.tenant_id!r}: {exc}",
+        ) from exc
+
     # call_id MUST be a real uuid4 — calls.id is a uuid column and downstream
     # writes (transcripts, turn_latencies, lead_scores) FK to it. The earlier
     # "call-{hex}" scheme caused every persist to 400 with 22P02.
@@ -348,7 +368,9 @@ async def trigger_outbound_call(req: PlaceCallRequest) -> PlaceCallResponse:
         default_lang=req.lang_hint,
     )
     db = _build_db_client()
-    active = _ActiveCall(ctx=ctx, slots=QualificationSlots(), deps=deps, db=db)
+    active = _ActiveCall(
+        ctx=ctx, slots=QualificationSlots(), deps=deps, tenant=tenant, db=db,
+    )
     _active_calls[call_id] = active
     global _last_pending_call_id
     _last_pending_call_id = call_id
@@ -373,7 +395,9 @@ async def trigger_outbound_call(req: PlaceCallRequest) -> PlaceCallResponse:
     # first word plays the instant the stream opens — no dead air the lead
     # could mistake for a spam "second ring".
     active.intro_text = build_intro_text(
-        lang=ctx.language_state.current.value, first_name=ctx.lead_first_name
+        tenant=tenant,
+        lang=ctx.language_state.current.value,
+        first_name=ctx.lead_first_name,
     )
     _task = asyncio.create_task(_presynth_intro(active, active.intro_text))
     _bg_tasks.add(_task)
@@ -493,9 +517,14 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                 # Use the intro pre-synthesized at dial time (instant, no dead
                 # air); fall back to live synth only if it isn't ready yet.
                 try:
-                    intro = active.intro_text or build_intro_text(
-                        lang=active.ctx.language_state.current.value,
-                        first_name=active.ctx.lead_first_name,
+                    intro = active.intro_text or (
+                        build_intro_text(
+                            tenant=active.tenant,
+                            lang=active.ctx.language_state.current.value,
+                            first_name=active.ctx.lead_first_name,
+                        )
+                        if active.tenant is not None
+                        else ""
                     )
                     if active.intro_audio is not None:
                         dur = await _play_wav(session, active, active.intro_audio, intro)

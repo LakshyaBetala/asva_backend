@@ -17,12 +17,17 @@ from voice_agent.pipeline import (
     render_intro_text,
     render_system_message_for_turn,
 )
+from voice_agent.tenant_config import get_tenant
+
+# Tests pin to the seeded SPC tenant — its intros are what these
+# assertions historically matched ("Hi Ravi", "Priya", etc.).
+_TENANT = get_tenant("spc-tenant")
 
 
 def _ctx(lang: str = "en-IN", name: str | None = "Ravi", company: str | None = "Acme"):
     return make_initial_context(
         call_id="c1",
-        tenant_id="t1",
+        tenant_id="spc-tenant",
         lead_id="L1",
         lead_first_name=name,
         lead_company=company,
@@ -51,13 +56,13 @@ def test_system_message_reflects_current_language_after_switch():
 
 def test_intro_text_uses_first_name_and_default_language():
     ctx = _ctx(lang="en-IN", name="Ravi")
-    txt = render_intro_text(ctx)
+    txt = render_intro_text(ctx, _TENANT)
     assert "Hi Ravi" in txt
 
 
 def test_intro_text_falls_back_when_name_unusable():
     ctx = _ctx(lang="hi-IN", name="Unknown")
-    txt = render_intro_text(ctx)
+    txt = render_intro_text(ctx, _TENANT)
     assert "Unknown" not in txt
     assert "Priya" in txt
 

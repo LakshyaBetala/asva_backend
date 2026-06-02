@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from .conversation_state import ConversationState
 from .language_state import Lang, LanguageState
 from .prompts import build_intro_text, build_system_message, load_priya_prompt
+from .tenant_config import TenantConfig  # noqa: TC002 — used as type
 
 # Credit-based billing tiers (al_cred = 150-sec block, ceiling-rounded):
 #   0-150s    = 1 cred
@@ -160,9 +161,14 @@ def render_system_message_for_turn(ctx: CallContext) -> str:
     )
 
 
-def render_intro_text(ctx: CallContext) -> str:
-    """Text the first-turn cache will speak (or live-synthesize on miss)."""
+def render_intro_text(ctx: CallContext, tenant: TenantConfig) -> str:
+    """Text the first-turn cache will speak (or live-synthesize on miss).
+
+    Tenant is required — every call now resolves a tenant at boot so the
+    intro reflects that client's company/agent/city, not a global default.
+    """
     return build_intro_text(
+        tenant=tenant,
         lang=ctx.language_state.current.value,
         first_name=ctx.lead_first_name,
     )
