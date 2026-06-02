@@ -6,6 +6,15 @@ NOT to "qualify" in the corporate sense — it's to *book a site visit*
 on the broker's calendar within the call, because a booking is the only
 thing a broker will pay ₹8k/month for.
 
+Languages: brokers operate in Hindi + English primarily, with regional
+overlays. Tamil is intentionally NOT supported here — brokers don't
+work Tamil Nadu (the SPC tenant has Tamil because it's Chennai-based).
+Marathi/Kannada/Telugu cover Mumbai/Blr/Hyd respectively and are
+written in deliberately English-loanword-heavy phrasing so Sarvam's
+Bulbul model pronounces proper nouns and the brand name cleanly. The
+native-language phrasing is conservative and should get a native-speaker
+pass before being used at scale outside the bilingual MVP demos.
+
 Slot schema is intentionally narrow: budget, locality, BHK, timeline,
 and the actual slot they agree to. Anything more is conversational
 overhead that loses the booking.
@@ -18,6 +27,9 @@ from dataclasses import dataclass
 from voice_agent.tenant_config import TenantConfig
 
 
+_SUPPORTED_LANGS = ("en-IN", "hi-IN", "mr-IN", "kn-IN", "te-IN")
+
+
 @dataclass(frozen=True)
 class _RealEstateBrain:
     industry_key: str = "real_estate"
@@ -25,6 +37,7 @@ class _RealEstateBrain:
     def intro_template(self, lang: str, tenant: TenantConfig) -> str:
         agent = tenant.agent_name
         company = tenant.company_name
+
         if lang == "en-IN":
             return (
                 f"Hi {{name}}, this is {agent} from {company}. You'd shown "
@@ -37,17 +50,35 @@ class _RealEstateBrain:
                 f"Aapne property dekhne mein interest dikhaya tha — ek "
                 f"minute baat kar sakte hain?"
             )
-        # ta-IN
-        return (
-            f"Vanakkam {{name}} sir, naan {agent}, {company}-la irundhu. "
-            f"Property paaka interest irundhuchu-nu therinjichi — oru "
-            f"nimisham pesalama?"
+        if lang == "mr-IN":
+            # Mumbai brokers — Marathi with English loanwords for crisp TTS.
+            return (
+                f"Namaskar {{name}} ji, mi {agent}, {company} madhun bolat aahe. "
+                f"Tumhi property baddal vichar kelat — don minit bolu shakto ka?"
+            )
+        if lang == "kn-IN":
+            # Bangalore brokers — Kannada w/ English property terms.
+            return (
+                f"Namaskara {{name}} avare, naanu {agent}, {company} inda "
+                f"matadtha iddini. Property bagge interest ittu antha "
+                f"thilkonde — ondu nimisha matadabahuda?"
+            )
+        if lang == "te-IN":
+            # Hyderabad brokers — Telugu w/ English property terms.
+            return (
+                f"Namaskaram {{name}} garu, nenu {agent}, {company} nundi. "
+                f"Meeru property gurinchi interest chupincharu — oka "
+                f"nimisham maatladagalama?"
+            )
+        raise ValueError(
+            f"real_estate brain does not support lang={lang!r}; "
+            f"supported: {_SUPPORTED_LANGS}"
         )
 
     def slot_schema(self) -> dict[str, str]:
         return {
             "budget_range": "INR budget band (e.g. 80L-1.2Cr, 2-3Cr)",
-            "locality": "preferred neighbourhood (e.g. Bandra, Powai, Whitefield)",
+            "locality": "preferred neighbourhood (e.g. Bandra, Powai, Whitefield, Hitech City)",
             "bhk": "1 / 2 / 3 / 4+ BHK",
             "possession_timeline": "ready-to-move vs 6mo / 12mo / 24mo under-construction",
             "site_visit_slot": "ISO-8601 datetime they agreed to for a visit",

@@ -35,10 +35,15 @@ class _ChemicalsBrain:
                 f"Haan {{name}} ji, namaste! Main {agent}, {company} "
                 f"{city} se. Do minute baat ho sakti hai?"
             )
-        # ta-IN — spellings tuned for Sarvam Bulbul Tamil pronunciation
-        return (
-            f"Vanakkam {{name}} sir, naan {agent}, {company} "
-            f"{city}-la irundhu. Rendu nimisham pesalama?"
+        if lang == "ta-IN":
+            # Spellings tuned for Sarvam Bulbul Tamil pronunciation.
+            return (
+                f"Vanakkam {{name}} sir, naan {agent}, {company} "
+                f"{city}-la irundhu. Rendu nimisham pesalama?"
+            )
+        raise ValueError(
+            f"chemicals brain does not support lang={lang!r}; "
+            f"supported: ('en-IN', 'hi-IN', 'ta-IN')"
         )
 
     def slot_schema(self) -> dict[str, str]:
