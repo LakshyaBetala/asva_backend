@@ -33,6 +33,7 @@ _PROMPTS_DIR = (
 _PROMPT_FILES: dict[str, str] = {
     "chemicals": "priya-system.md",
     "real_estate": "priya-real-estate.md",
+    "voice_agent_sales": "priya-voice-agent-sales.md",
 }
 _DEFAULT_INDUSTRY = "chemicals"
 

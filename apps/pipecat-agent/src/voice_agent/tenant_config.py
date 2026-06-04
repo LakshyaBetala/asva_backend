@@ -55,14 +55,21 @@ class TenantConfig:
 
     # --- integrations (optional, empty disables that feature) ---
     google_calendar_id: str = ""  # e.g. "primary" or a calendar resource id
+    google_refresh_token: str = ""  # per-tenant OAuth refresh token
     whatsapp_phone_id: str = ""  # Meta Cloud API phone_number_id
     whatsapp_business_id: str = ""
+    whatsapp_access_token: str = ""  # Meta system-user permanent token
+    whatsapp_template_name: str = "almmatix_demo_confirm"  # approved template
 
     def has_calendar(self) -> bool:
-        return bool(self.google_calendar_id)
+        return bool(self.google_calendar_id and self.google_refresh_token)
 
     def has_whatsapp(self) -> bool:
-        return bool(self.whatsapp_phone_id and self.whatsapp_business_id)
+        return bool(
+            self.whatsapp_phone_id
+            and self.whatsapp_business_id
+            and self.whatsapp_access_token
+        )
 
 
 # Sentinel for "no tenant loaded — refuse to serve a call".
@@ -90,6 +97,64 @@ class TenantNotFound(LookupError):
 # demo real-estate broker tenant used to close week-1 clients.
 
 _SEED: dict[str, TenantConfig] = {
+    # The meta-tenant. Almmatix's own outbound — Priya rings up brokers
+    # in North India and pitches them on hiring Priya. The product IS
+    # the sales call. The close is a 15-min demo with the founder team.
+    "almmatix-self-tenant": TenantConfig(
+        tenant_id="almmatix-self-tenant",
+        company_name="Almmatix",
+        agent_name="Priya",
+        city="Bangalore",  # where the brand is based; not the broker's city
+        default_lang="hi-IN",  # North India default
+        voice_id_en="emily",
+        voice_id_hi="anushka",
+        voice_id_ta="anushka",  # unused — brain rejects ta-IN
+        industry_key="voice_agent_sales",
+        pronunciation_pack={
+            # Brand + product nouns the TTS must pronounce cleanly
+            "Almmatix": "All-matix",
+            "Laksh": "Laksh",
+            "Betala": "Beh-ta-la",
+            "Priya": "Priyaa",
+            # Product terms (no rupee amounts — Priya never quotes prices)
+            "BHK": "B-H-K",
+            "CRM": "C-R-M",
+            "API": "A-P-I",
+            "EMI": "E-M-I",
+            "GST": "G-S-T",
+            "RERA": "Rera",
+            "demo": "demo",
+            # Competitor / channel nouns we name in the script
+            "Magicbricks": "Magic-bricks",
+            "99acres": "ninety-nine acres",
+            "WhatsApp": "Whats-app",
+            "NoBroker": "No-broker",
+            # North India localities (Delhi NCR, Punjab, UP, Rajasthan)
+            "Gurgaon": "Gur-gaon",
+            "Gurugram": "Guru-gram",
+            "Noida": "No-ee-da",
+            "Greater Noida": "Greater No-ee-da",
+            "Faridabad": "Faridabad",
+            "Ghaziabad": "Gha-ziabad",
+            "Dwarka": "Dwarka",
+            "Saket": "Saa-ket",
+            "Vasant Kunj": "Vasant Kunj",
+            "Hauz Khas": "Hoz Khas",
+            "Connaught Place": "Connaught Place",
+            "Karol Bagh": "Karol Bagh",
+            "Lajpat Nagar": "Lajpat Nagar",
+            "Rohini": "Ro-hini",
+            "Pitampura": "Pitam-pura",
+            "Chandigarh": "Chandi-garh",
+            "Mohali": "Moh-ali",
+            "Panchkula": "Panch-kula",
+            "Lucknow": "Luck-now",
+            "Gomti Nagar": "Gomti Nagar",
+            "Jaipur": "Jai-pur",
+            "Mansarovar": "Man-sarovar",
+            "Vaishali Nagar": "Vaishali Nagar",
+        },
+    ),
     "spc-tenant": TenantConfig(
         tenant_id="spc-tenant",
         company_name="Supreme Petrochemicals",

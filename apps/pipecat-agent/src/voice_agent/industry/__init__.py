@@ -49,10 +49,12 @@ class IndustryBrain(Protocol):
 
 from voice_agent.industry import chemicals as _chemicals
 from voice_agent.industry import real_estate as _real_estate
+from voice_agent.industry import voice_agent_sales as _voice_agent_sales
 
 _BRAINS: dict[str, IndustryBrain] = {
     _chemicals.BRAIN.industry_key: _chemicals.BRAIN,
     _real_estate.BRAIN.industry_key: _real_estate.BRAIN,
+    _voice_agent_sales.BRAIN.industry_key: _voice_agent_sales.BRAIN,
 }
 
 
