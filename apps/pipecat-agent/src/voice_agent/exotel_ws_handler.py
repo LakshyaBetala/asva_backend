@@ -124,6 +124,10 @@ class _ActiveCall:
     # Full transcript captured turn-by-turn so the post-call scorer has the
     # whole conversation, not just the rolling window in conversation_state.
     transcript: list[dict[str, str]] = field(default_factory=list)
+    # Lead's destination phone (E.164) captured from the trigger payload.
+    # Needed for the post-call WhatsApp confirmation — Exotel's status
+    # callback doesn't echo the original `to` field reliably across regions.
+    lead_phone: str = ""
 
 
 _active_calls: dict[str, _ActiveCall] = {}
@@ -371,6 +375,7 @@ async def trigger_outbound_call(req: PlaceCallRequest) -> PlaceCallResponse:
     db = _build_db_client()
     active = _ActiveCall(
         ctx=ctx, slots=QualificationSlots(), deps=deps, tenant=tenant, db=db,
+        lead_phone=req.to,
     )
     _active_calls[call_id] = active
     global _last_pending_call_id
@@ -627,6 +632,11 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                 r2_reader=active.deps.r2_reader,
                 r2_writer=active.deps.r2_writer,
                 voice_id=active.deps.voice_id,
+                pronunciation_pack=(
+                    active.tenant.pronunciation_pack
+                    if active.tenant is not None
+                    else {}
+                ),
             )
 
             turn_end_call = False
@@ -858,6 +868,35 @@ async def exotel_status_callback(call_id: str, request: Any = None) -> dict:
                         "call_id=%s scored: %s (%d) next=%s",
                         call_id, result.classification, result.score, result.next_action,
                     )
+
+                    # Booking + WhatsApp hook. Fires only on hot/warm so cold
+                    # numbers don't burn Meta template quality score. Each step
+                    # fails open — a missed booking is recoverable by human
+                    # follow-up; we just want to log what happened.
+                    if active.tenant is not None:
+                        try:
+                            from .post_call_hook import run_post_call_hook
+                            hook_extracted = result.extracted or {}
+                            hook_result = await run_post_call_hook(
+                                tenant=active.tenant,
+                                classification=result.classification,
+                                lead_first_name=active.ctx.lead_first_name,
+                                lead_phone=active.lead_phone,
+                                primary_pain=str(hook_extracted.get("primary_pain", ""))[:200],
+                                broker_focus=str(hook_extracted.get("broker_focus", ""))[:120],
+                            )
+                            logger.info(
+                                "call_id=%s post_call_hook: booked=%s wa=%s reason=%s meet=%s",
+                                call_id,
+                                hook_result.booked,
+                                hook_result.whatsapp_sent,
+                                hook_result.reason,
+                                hook_result.meet_link or "-",
+                            )
+                        except Exception:
+                            logger.exception(
+                                "call_id=%s post_call_hook failed", call_id,
+                            )
                 except Exception:
                     logger.exception("call_id=%s post-call scoring failed", call_id)
             asyncio.create_task(_score_and_persist())

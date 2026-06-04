@@ -13,6 +13,8 @@ from voice_agent.streaming_orchestrator import (
     AudioChunkEvent,
     StreamingDependencies,
     TurnCompleteEvent,
+    apply_pronunciation_pack,
+    prepare_for_tts,
     run_turn_streaming,
     split_sentences,
 )
@@ -44,6 +46,41 @@ def test_split_empty_returns_empty():
 def test_split_hindi_question_mark():
     text = "Aapka volume kitna hai? Hum bulk mein dete hain."
     assert len(split_sentences(text)) == 2
+
+
+# -- Pronunciation pack tests ------------------------------------------------
+
+def test_apply_pronunciation_pack_substitutes_whole_words():
+    pack = {"Almmatix": "All-matix", "Betala": "Beh-ta-la"}
+    out = apply_pronunciation_pack("Main Laksh Betala se hoon, Almmatix se.", pack)
+    assert out == "Main Laksh Beh-ta-la se hoon, All-matix se."
+
+
+def test_apply_pronunciation_pack_respects_word_boundaries():
+    # "demo" must not replace inside "demolish".
+    pack = {"demo": "deh-mo"}
+    out = apply_pronunciation_pack("Quick demo of demolish flow.", pack)
+    assert out == "Quick deh-mo of demolish flow."
+
+
+def test_apply_pronunciation_pack_prefers_longer_match():
+    # "Laksh Betala" beats "Laksh" alone when both keys are present.
+    pack = {"Laksh": "Luck", "Laksh Betala": "Laksh Beh-ta-la"}
+    out = apply_pronunciation_pack("Hello Laksh Betala.", pack)
+    assert out == "Hello Laksh Beh-ta-la."
+
+
+def test_apply_pronunciation_pack_empty_pack_is_noop():
+    assert apply_pronunciation_pack("Hello world", {}) == "Hello world"
+    assert apply_pronunciation_pack("Hello world", None) == "Hello world"
+
+
+def test_prepare_for_tts_pipes_pack_then_pacing():
+    # Pack runs before Tamil pacing — pacing should see the substituted form.
+    pack = {"Sari": "Saari"}
+    out = prepare_for_tts("Sari sir, varuthu.", "ta-IN", pack)
+    # ack pause inserted after the substituted "Saari sir".
+    assert out.startswith("Saari sir...")
 
 
 # -- Fake adapters -----------------------------------------------------------

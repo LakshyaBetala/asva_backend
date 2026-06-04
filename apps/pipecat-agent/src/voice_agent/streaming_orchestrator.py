@@ -21,7 +21,7 @@ import asyncio
 import re
 import time
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Optional, Protocol
+from typing import AsyncIterator, Mapping, Optional, Protocol
 
 from .conversation_state import ConversationState, Phase, system_prompt_addendum
 from .language_state import Lang, LanguageState, STTUtterance, Transition
@@ -104,6 +104,11 @@ class StreamingDependencies:
     r2_reader: R2Reader
     r2_writer: R2Writer
     voice_id: str = PINNED_VOICE_ID
+    # Whole-word substitutions applied to TTS-bound text before sanitise/pace.
+    # Sourced from the tenant config so each tenant gets deterministic
+    # pronunciation (e.g. "Almmatix" → "All-matix", "Betala" → "Beh-ta-la")
+    # instead of relying on the TTS engine's phoneme guesser.
+    pronunciation_pack: Mapping[str, str] = field(default_factory=dict)
 
 
 # -- Sentence splitting ----------------------------------------------------
@@ -213,11 +218,51 @@ def pace_for_ta_tts(text: str) -> str:
     return out
 
 
-def prepare_for_tts(text: str, lang: str) -> str:
-    """Sanitiser + per-language pacing. Single entry point for TTS-bound text."""
+_PACK_PATTERN_CACHE: dict[int, re.Pattern[str]] = {}
+
+
+def apply_pronunciation_pack(
+    text: str, pack: Mapping[str, str] | None
+) -> str:
+    """Whole-word substitute pronunciation_pack entries into TTS-bound text.
+
+    Word-boundary anchored so "demo" won't replace "demolish". Longer keys
+    win on overlap (sorted by length desc) so "Laksh Betala" beats "Laksh".
+    Pattern compilation is cached per pack object so we don't rebuild the
+    regex on every sentence.
+    """
+    if not text or not pack:
+        return text
+    key = id(pack)
+    patt = _PACK_PATTERN_CACHE.get(key)
+    if patt is None:
+        escaped = sorted(
+            (re.escape(k) for k in pack.keys() if k), key=len, reverse=True
+        )
+        if not escaped:
+            return text
+        patt = re.compile(r"\b(?:" + "|".join(escaped) + r")\b")
+        _PACK_PATTERN_CACHE[key] = patt
+    return patt.sub(lambda m: pack[m.group(0)], text)
+
+
+def prepare_for_tts(
+    text: str,
+    lang: str,
+    pack: Mapping[str, str] | None = None,
+) -> str:
+    """Sanitiser + pronunciation pack + per-language pacing.
+
+    Single entry point for TTS-bound text. Pack substitution runs *before*
+    pacing so Tamil ellipsis insertion sees the final spelling, and it
+    runs *above* the phrase cache so each substituted form gets its own
+    cache entry (correct — different audio per tenant pronunciation).
+    """
     cleaned = sanitize_for_tts(text)
     if not cleaned:
         return cleaned
+    if pack:
+        cleaned = apply_pronunciation_pack(cleaned, pack)
     if lang == "ta-IN":
         cleaned = pace_for_ta_tts(cleaned)
     return cleaned
@@ -392,7 +437,9 @@ async def run_turn_streaming(
             # All but last are complete sentences → TTS + yield
             for complete_sentence in sentences[:-1]:
                 spoken = prepare_for_tts(
-                    complete_sentence, transition.current_language.value
+                    complete_sentence,
+                    transition.current_language.value,
+                    deps.pronunciation_pack,
                 )
                 if not spoken:
                     continue  # whole sentence was an aside / stage marker
@@ -430,7 +477,11 @@ async def run_turn_streaming(
             sentence_buffer = sentences[-1]  # keep incomplete tail
 
     # Flush remaining buffer
-    tail = prepare_for_tts(sentence_buffer.strip(), transition.current_language.value)
+    tail = prepare_for_tts(
+        sentence_buffer.strip(),
+        transition.current_language.value,
+        deps.pronunciation_pack,
+    )
     if tail:
         if not first_sentence_done:
             timings["llm_first_sentence_ms"] = int(
