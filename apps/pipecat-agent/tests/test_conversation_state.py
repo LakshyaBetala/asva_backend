@@ -81,13 +81,17 @@ class TestAcknowledgmentTracking:
 
 
 class TestRecentTurnsBuffer:
-    def test_keeps_last_four_turns_verbatim(self):
+    def test_keeps_last_window_of_turns_verbatim(self):
+        # Window widened 4 -> 8 (2026-06-11) so a full qualification arc
+        # stays in the LLM's rolling transcript.
+        from voice_agent.conversation_state import RECENT_TURNS_WINDOW
+
         s = ConversationState()
-        for i in range(6):
+        for i in range(RECENT_TURNS_WINDOW + 2):
             s.record_priya_turn(f"Turn number {i}")
-        assert len(s.recent_priya_turns) == 4
+        assert len(s.recent_priya_turns) == RECENT_TURNS_WINDOW
         assert s.recent_priya_turns[0] == "Turn number 2"
-        assert s.recent_priya_turns[-1] == "Turn number 5"
+        assert s.recent_priya_turns[-1] == f"Turn number {RECENT_TURNS_WINDOW + 1}"
 
     def test_prompt_warns_against_paraphrasing(self):
         s = ConversationState()

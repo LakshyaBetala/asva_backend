@@ -131,13 +131,15 @@ async def test_update_call_status_patches_with_filters():
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as http:
         db = AgentSupabaseClient(_config(), client=http)
+        # Writes are gated on real UUIDs (placeholder ids no-op silently).
+        cid = "11111111-2222-3333-4444-555555555555"
         await db.update_call_status(
-            call_id="c1", status="completed",
+            call_id=cid, status="completed",
             duration_sec=145, billed_units=1,
         )
 
     assert "calls" in captured["url"]
-    assert "id=eq.c1" in captured["url"]
+    assert f"id=eq.{cid}" in captured["url"]
     assert captured["body"]["status"] == "completed"
     assert captured["body"]["duration_sec"] == 145
     assert captured["body"]["billed_units"] == 1
@@ -170,9 +172,13 @@ async def test_persist_turn_async_fires_all_writes():
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as http:
         db = AgentSupabaseClient(_config(), client=http)
+        # Writes are gated on real UUIDs (placeholder ids no-op silently).
         persist_turn_async(
             db,
-            call_id="c1", tenant_id="t1", lead_id="l1", turn_idx=1,
+            call_id="11111111-2222-3333-4444-555555555555",
+            tenant_id="22222222-3333-4444-5555-666666666666",
+            lead_id="33333333-4444-5555-6666-777777777777",
+            turn_idx=1,
             lead_text="haan ji", lead_lang="hi-IN", priya_text="achha",
             slots_row={"buying_confidence": 0.5},
             latency={"stt_ms": 500, "llm_ms": 1200, "tts_ms": 800, "total_ms": 2500},

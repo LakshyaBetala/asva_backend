@@ -201,100 +201,25 @@ class _RealEstateBrain:
         return ("intent", "budget_range", "locality", "bhk", "site_visit_slot")
 
     def pain_overlay(self, lang: str) -> str:
-        """Per-turn reinforcement appended after the base prompt.
+        """Per-turn drift-catcher appended after the base prompt.
 
-        Deep behavior + locality→WhatsApp→visit scripts live in
-        priya-real-estate.md. This overlay is the terse SURVIVAL kit
-        that catches the LLM when it drifts mid-call. Includes the
-        canonical WhatsApp-after-locality response in the active language
-        so the LLM can copy it verbatim.
+        Deliberately TINY: the full playbook lives in priya-real-estate.md
+        (sent as the system prompt). This used to duplicate ~1K tokens of
+        those rules every turn — at ~7.3K tokens/turn two turns in one
+        minute blew Groq's 12K TPM free limit (call 866614ad). Keep only
+        what the model demonstrably drops mid-call.
         """
-        if lang == "en-IN":
-            locality_script = (
-                'WHEN LEAD NAMES A LOCALITY (e.g. "Adyar", "T. Nagar"), reply in this SHAPE '
-                '(own words, fit the conversation):\n'
-                '  ack locality -> "we have 2-3 fresh options in [locality], sending listings '
-                'to this WhatsApp number" -> offer a CHOICE of two visit slots as a question.\n'
-                'WHEN LEAD SAYS YES TO A SPECIFIC SLOT (only then), confirm in this shape:\n'
-                '  "Done sir — [day] [time], [locality] site visit booked. Sending the '
-                'confirmation to this WhatsApp number with our team\'s contact and exact '
-                'address." Never announce a booking before their yes.\n'
-            )
-        elif lang == "ta-IN":
-            locality_script = (
-                'WHEN LEAD NAMES A LOCALITY (e.g. "Adyar", "T. Nagar"), reply in this SHAPE '
-                '(own words, fit the conversation):\n'
-                '  ack locality -> "[locality] la namba kitta 2-3 fresh options irukku, listings '
-                'indha WhatsApp number ku anuppuren" -> offer a CHOICE of two visit slots as a question.\n'
-                'WHEN LEAD SAYS YES TO A SPECIFIC SLOT (only then), confirm in this shape:\n'
-                '  "Done sir, [day] [time], [locality] site visit confirm. Indha WhatsApp '
-                'number-ku confirmation anuppuren — address-um namma team contact-um." '
-                'Never announce a booking before their yes.\n'
-            )
-        else:  # hi-IN
-            locality_script = (
-                'WHEN LEAD NAMES A LOCALITY (e.g. "Adyar", "T. Nagar"), reply in this SHAPE '
-                '(own words, fit the conversation):\n'
-                '  ack locality -> "[locality] mein humare paas 2-3 fresh options hain, listings '
-                'iss WhatsApp number pe bhej rahi hoon" -> offer a CHOICE of two visit slots as a question.\n'
-                'WHEN LEAD SAYS YES TO A SPECIFIC SLOT (only then), confirm in this shape:\n'
-                '  "Done sir, [day] [time], [locality] site visit confirm. Iss WhatsApp number '
-                'pe confirmation bhej rahi hoon — address aur hamari team ka contact." '
-                'Never announce a booking before their yes.\n'
-            )
         return (
             "<broker_focus>\n"
-            "GOAL: book a site visit + send WhatsApp confirmation. NOT selling. NOT quoting prices.\n"
-            "\n"
-            "ABSOLUTE RULES — VIOLATION = CALL FAIL:\n"
-            "1. NEVER state a number, price, rate, area, or amount the lead did NOT say first.\n"
-            "   Do NOT 'summarise back' an invented price ('so you want a 72.1 lakh flat'). NEVER.\n"
-            "   If you don't know the budget, ASK once — don't guess, don't infer.\n"
-            "   EXCEPTION — the lead's OWN numbers: when they name a budget ('60-70 lakh'),\n"
-            "   MIRROR it back warmly and confirm options exist in that band:\n"
-            "   'Achha, 60-70 ke range mein achhe options hain humare paas sir.' Then next question.\n"
-            "2. NEVER invent specific inventory ('Building XYZ has a flat for you'). Talk in ranges only.\n"
-            "3. NEVER promise legal / loan / RERA / OC verification on call — broker confirms.\n"
-            "4. STAY in lead's language. If transcript has Devanagari → reply Hindi. Tamil script → "
-            "   reply Tamil. ASCII English → reply English. Flip ONLY on explicit triggers "
-            "   ('speak in english', 'hindi mein bolo', 'tamil-la pesunga').\n"
-            "5. QUALIFY IN ORDER, one question per turn: intent (buy/rent) -> locality -> BHK -> "
-            "   budget. Ack each answer in 2-4 words ('Achha, Anna Nagar.') — NEVER restate "
-            "   their full sentence back. Then PROPOSE a visit slot as a question (choice of "
-            "   two). Confirm the booking ONLY after the lead says yes to a specific slot. "
-            "   Don't ask timeline / loan / school unless lead raises them.\n"
-            "5b. BUDGET QUESTION MATCHES INTENT. RENT lead -> monthly rent band: 'Monthly rent "
-            "   budget kitna soch rahe hain — 20-30 hazaar ya zyada?' NEVER ask a rent lead "
-            "   about lakhs/crores. BUY lead -> 'Budget approximately — 80 lakh around ya "
-            "   higher?' Mixing these up instantly breaks trust.\n"
-            "5c. ONCE intent + locality + BHK are known: STOP qualifying. Next turn = WhatsApp "
-            "   listings + visit-slot proposal. Asking more questions after you have these "
-            "   three reads as a script loop.\n"
-            "6. Write the company + area names as plain normal words — the voice layer "
-            "handles pronunciation. NEVER insert dashes or single spaces between letters "
-            "('B-H-K', 'X Y Z') — the TTS literally says 'B dash H dash K'. 'BHK' stays 'BHK'.\n"
-            "7. HARD LIMIT: maximum TWO sentences per reply. Total reply <=20 words. "
-            "   Last sentence must be a question. Then STOP — wait for lead. NEVER fire 3-5 "
-            "   sentences in a row, NEVER list options unsolicited.\n"
-            "8. NEVER infer meaning from one-word lead replies ('Recorded' / 'Okay' / 'Yes' / 'Hmm'). "
-            "   Just ask the next short question: 'Sorry sir, buy ya rent?'\n"
-            "9. NEVER list localities for the lead ('we have T. Nagar, Adyar, Velachery...'). "
-            "   Just ask: 'Which area in Chennai?' Let THEM name one. Then mirror it back.\n"
-            "10. If lead names a locality you don't recognize, do NOT correct them. Just say "
-            "    'Got it sir, [repeat what they said]. We have a few options there...' and continue "
-            "    with the WhatsApp+visit close. Better to roll with it than confuse them.\n"
-            "11. Plain punctuation only — periods and commas. NO ellipsis '...' (TTS reads as glitch). "
-            "    NO em-dashes (TTS ignores them).\n"
-            "\n"
-            "SAY-IT-RIGHT — write each word in the spelling the voice reads correctly:\n"
-            "- Keep 'lakh' and 'crore' as-is ('eighty lakh', 'one point two crore'). "
-            "Write 'sqft' as 'square feet'. 'BHK' stays 'BHK', 'EMI' stays 'EMI', 'RERA' as 'Rera'.\n"
-            "- Chennai areas, write plainly as spoken: 'Tee Nagar' (NOT 'T. Nagar' / 'T-Nagar'), "
-            "Adyar, Mylapore, Velachery, Anna Nagar, Besant Nagar, Nungambakkam, Tambaram, "
-            "Porur, Guindy, Saidapet, OMR, ECR.\n"
-            "- One normal word per name. A dash or mid-word space is read aloud as 'dash' / a pause.\n"
-            "\n"
-            + locality_script +
+            "Drift check, every reply: max 2 short sentences, end with a "
+            "question or next step; ack in 2-4 words, never restate the "
+            "lead's words; never a number the lead didn't say first (mirror "
+            "THEIR budget back warmly); rent lead gets monthly-rent budget "
+            "question, never lakhs/crores; once intent+locality+BHK known, "
+            "next turn = WhatsApp listings + choice of two visit slots; "
+            "confirm a booking ONLY after their yes to a specific time. "
+            "Plain words for names (BHK not B-H-K, Tee Nagar not T-Nagar); "
+            "periods and commas only, no ellipsis or dashes.\n"
             "</broker_focus>"
         )
 

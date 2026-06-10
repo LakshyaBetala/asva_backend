@@ -76,11 +76,32 @@ def test_apply_pronunciation_pack_empty_pack_is_noop():
 
 
 def test_prepare_for_tts_pipes_pack_then_pacing():
-    # Pack runs before Tamil pacing — pacing should see the substituted form.
-    pack = {"Sari": "Saari"}
-    out = prepare_for_tts("Sari sir, varuthu.", "ta-IN", pack)
-    # ack pause inserted after the substituted "Saari sir".
-    assert out.startswith("Saari sir...")
+    # Pack substitution applies to mid-sentence words. (Leading bare acks
+    # are stripped by the name-echo sanitiser by design, so the pack is
+    # exercised on a locality, not on the ack.)
+    pack = {"Velachery": "Vela-cheri"}
+    out = prepare_for_tts("Velachery la nalla options irukku.", "ta-IN", pack)
+    assert "Vela-cheri" in out
+    assert "Velachery" not in out
+
+
+def test_sanitize_keeps_short_bare_ack_drops_canned_fallback():
+    # A reply that is ONLY a short ack is spoken as-is — never replaced by
+    # the old canned "didn't catch that / buy or rent?" line (which fired
+    # mid-call ignoring context and re-asked answered questions).
+    out = prepare_for_tts("Haan ji.", "hi-IN")
+    assert out == "Haan ji."
+    assert "didn't catch" not in out
+
+
+def test_spell_numbers_for_tts():
+    from voice_agent.streaming_orchestrator import spell_numbers_for_tts
+    assert spell_numbers_for_tts("2000 square feet") == "two thousand square feet"
+    assert spell_numbers_for_tts("80,00,000 budget") == "eighty lakh budget"
+    assert "one point five" in spell_numbers_for_tts("1.5 crore")
+    # Phone numbers (10+ digits) and times stay untouched.
+    assert spell_numbers_for_tts("9876543210") == "9876543210"
+    assert "4:30" in spell_numbers_for_tts("at 4:30 pm")
 
 
 # -- Fake adapters -----------------------------------------------------------

@@ -167,7 +167,17 @@ def sanitize_for_tts(text: str) -> str:
     if cleaned and cleaned[0].islower():
         cleaned = cleaned[0].upper() + cleaned[1:]
     if not cleaned:
-        cleaned = "Sorry sir, didn't catch that. Are you looking to buy or to rent?"
+        # The whole sentence was a bare ack the name-echo stripper consumed.
+        # If it was genuinely short ("Haan ji.", "Sari sir."), speak it as-is
+        # — natural. Otherwise drop the sentence (callers skip empties).
+        # NEVER substitute a canned line here: the old fallback ("Sorry sir,
+        # didn't catch that. Are you looking to buy or to rent?") fired
+        # mid-call ignoring context, got phrase-cached, and re-asked
+        # already-answered questions (calls d4cffcb9, 866614ad).
+        original = _WRAPPING_QUOTES.sub("", text.strip()).strip()
+        if 0 < len(original.split()) <= 4:
+            return original
+        return ""
     return cleaned
 
 
@@ -1010,11 +1020,31 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         # 2-4 words, NEVER a restatement of what the lead just told you.
         '[NEVER restate or summarise the lead\'s words back to them '
         '("aap rent pe dekh rahe hain...", "aapko lagta hai ki..."). They '
-        'KNOW what they said. Ack in 2-4 words max ("Achha sir" / "Sari sir" '
-        '/ "Got it"), then ANSWER their question or ask the next NEW thing. '
-        'Every reply must END with a question or a concrete next step — '
-        'never with an observation.]',
+        'KNOW what they said. Ack in 2-4 words max, then ANSWER their '
+        'question or ask the next NEW thing. VARY the ack — never open two '
+        'replies in a row with the same word (rotate: Achha / Sari sir / '
+        'Got it / Theek hai / Right / Samjhi / Okay sir — or skip the ack '
+        'entirely). Every reply must END with a question or a concrete '
+        'next step — never with an observation.]',
     ]
+    # Mid-sentence cutoff guard: batch STT flushes on silence, so a thinking
+    # pause ("can I know how many, what is—") arrives as a half-question.
+    # Call 0b3ba6e2: Priya answered the fragment with a non-sequitur apology
+    # and the lead snapped "do you forget things?". If the utterance looks
+    # unfinished, prompt them to continue instead of guessing.
+    _lt = (lead_text or "").strip()
+    if (
+        len(_lt.split()) >= 6
+        and not _lt.endswith((".", "?", "!", "।"))
+        and intent in ("normal", "backchannel")
+    ):
+        parts.append(
+            '[The lead\'s line may be CUT OFF mid-sentence (phone STT '
+            'flushes on pauses). If it reads incomplete, do NOT answer the '
+            'half-question and do NOT change topic — invite them to finish '
+            'in 2-4 words: "Haan sir, boliye?" / "Yes sir, tell me?" / '
+            '"Sollunga sir?". If it reads complete, reply normally.]'
+        )
 
     if turn == 0:
         parts.append('[Intro DONE. Do not introduce yourself.]')
@@ -1040,6 +1070,29 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         parts.append(
             "[CONVERSATION SO FAR — the lead already told you this. NEVER "
             "re-ask anything answered below; build on it.]\n" + "\n".join(lines[-12:])
+        )
+
+    # KNOWN SLOTS — the extractor's per-turn output, surfaced to the model.
+    # Without this, the model re-asked "which area?" after the lead had
+    # already said "Anna Nagar" (the question order read as a script). The
+    # qualify order is a PRIORITY LIST for what's missing, not a sequence.
+    known_bits: list[str] = []
+    if slots is not None:
+        if getattr(slots, "product_interest", None):
+            known_bits.append(f"requirement: {slots.product_interest}")
+        if getattr(slots, "pain_point", None):
+            known_bits.append(f"must-have: {slots.pain_point}")
+        if getattr(slots, "timeline_days", None) is not None:
+            known_bits.append(f"timeline: ~{slots.timeline_days} days")
+    if known_bits:
+        parts.append(
+            "[ALREADY KNOWN — " + "; ".join(known_bits) + ". Do NOT ask "
+            "about any of this again. Ask ONLY the single most important "
+            "thing still missing (intent / locality / BHK / budget — in that "
+            "priority). If nothing important is missing, propose the visit "
+            "slot now (choice of two). If the lead gave several details in "
+            "one breath, acknowledge once and jump ahead — never walk a "
+            "script.]"
         )
 
     last_priya = conv.recent_priya_turns[-1] if conv.recent_priya_turns else ""

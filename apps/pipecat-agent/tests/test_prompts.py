@@ -37,14 +37,16 @@ class TestIsUsableFirstName:
 
 class TestBuildIntroText:
     def test_english_with_name(self, spc_tenant):
+        # SPC persona was deleted 2026-06-11; get_tenant serves the broker
+        # tenant, so the intro carries the tenant's company name.
         out = build_intro_text(tenant=spc_tenant, lang="en-IN", first_name="Ravi")
         assert "Hi Ravi" in out
-        assert "Supreme Petrochemicals" in out
+        assert spc_tenant.company_name in out
 
     def test_hindi_with_name(self, spc_tenant):
         out = build_intro_text(tenant=spc_tenant, lang="hi-IN", first_name="Sunil")
         assert "Sunil" in out
-        assert "Supreme Petrochemicals" in out
+        assert spc_tenant.company_name in out
 
     def test_tamil_with_name(self, spc_tenant):
         out = build_intro_text(tenant=spc_tenant, lang="ta-IN", first_name="Karthik")
