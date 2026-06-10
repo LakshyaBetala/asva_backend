@@ -1010,7 +1010,8 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
             'Confirm only AFTER they pick one — then repeat day + time + '
             'locality back, say the address comes on this WhatsApp number, '
             'and stop. Never say a visit is already reserved before they '
-            'choose. Refer to "our broker", never "broker uncle".]'
+            'choose. Speak AS the brokerage — "I/we/our team" — never refer '
+            'to "the broker" as a third person.]'
         )
         return "\n".join(parts)
     if nudge_close:

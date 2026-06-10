@@ -217,7 +217,7 @@ class _RealEstateBrain:
                 'to this WhatsApp number" -> offer a CHOICE of two visit slots as a question.\n'
                 'WHEN LEAD SAYS YES TO A SPECIFIC SLOT (only then), confirm in this shape:\n'
                 '  "Done sir — [day] [time], [locality] site visit booked. Sending the '
-                'confirmation to this WhatsApp number with our broker\'s contact and exact '
+                'confirmation to this WhatsApp number with our team\'s contact and exact '
                 'address." Never announce a booking before their yes.\n'
             )
         elif lang == "ta-IN":
@@ -228,7 +228,7 @@ class _RealEstateBrain:
                 'indha WhatsApp number ku anuppuren" -> offer a CHOICE of two visit slots as a question.\n'
                 'WHEN LEAD SAYS YES TO A SPECIFIC SLOT (only then), confirm in this shape:\n'
                 '  "Done sir, [day] [time], [locality] site visit confirm. Indha WhatsApp '
-                'number-ku confirmation anuppuren — address-um namma broker contact-um." '
+                'number-ku confirmation anuppuren — address-um namma team contact-um." '
                 'Never announce a booking before their yes.\n'
             )
         else:  # hi-IN
@@ -239,7 +239,7 @@ class _RealEstateBrain:
                 'iss WhatsApp number pe bhej rahi hoon" -> offer a CHOICE of two visit slots as a question.\n'
                 'WHEN LEAD SAYS YES TO A SPECIFIC SLOT (only then), confirm in this shape:\n'
                 '  "Done sir, [day] [time], [locality] site visit confirm. Iss WhatsApp number '
-                'pe confirmation bhej rahi hoon — address aur hamare broker ka contact." '
+                'pe confirmation bhej rahi hoon — address aur hamari team ka contact." '
                 'Never announce a booking before their yes.\n'
             )
         return (
