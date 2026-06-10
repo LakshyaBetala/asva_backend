@@ -212,6 +212,11 @@ class _GroqAdapter:
     api_key: str
     model: str
     client: httpx.AsyncClient
+    # Slot extraction is simple JSON work — run it on a small fast model so
+    # the big conversational model's TPM budget (and bill) isn't paid twice
+    # per turn. Call d4cffcb9: extract on the 70B doubled token burn and
+    # tripped the free-tier 12K TPM limit every other turn.
+    extract_model: str = "llama-3.1-8b-instant"
     # When set, slot extraction uses Gemini (off by default so we don't burn
     # Gemini's free-tier rate budget on every turn).
     gemini_key: str = ""
@@ -290,7 +295,7 @@ class _GroqAdapter:
             system_message="You are a JSON extraction engine. Output ONLY valid JSON.",
             user_message=prompt,
             api_key=self.api_key,
-            model=self.model,
+            model=self.extract_model or self.model,
             client=self.client,
             generation_config={"temperature": 0.1, "max_tokens": 600},
         )

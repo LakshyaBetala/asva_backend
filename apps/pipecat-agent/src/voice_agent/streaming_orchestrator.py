@@ -289,12 +289,67 @@ def apply_pronunciation_pack(
     return patt.sub(lambda m: pack[m.group(0)], text)
 
 
+# -- Number → words (Indian system) ----------------------------------------
+#
+# The TTS reads bare digits digit-by-digit on 8kHz phone audio: "2000 square
+# feet" came out as "two zero zero zero" (call d4cffcb9). Spell numbers out
+# in English words — natural in Hinglish/Tanglish sentences too ("do hazaar"
+# would be wrong inside an English phrase; "two thousand" is how Chennai
+# actually says it).
+
+_ONES = (
+    "zero one two three four five six seven eight nine ten eleven twelve "
+    "thirteen fourteen fifteen sixteen seventeen eighteen nineteen"
+).split()
+_TENS = "zero ten twenty thirty forty fifty sixty seventy eighty ninety".split()
+
+
+def _int_to_words(n: int) -> str:
+    """0..99_99_99_999 in Indian-system English words (lakh / crore)."""
+    if n < 20:
+        return _ONES[n]
+    if n < 100:
+        t, r = divmod(n, 10)
+        return _TENS[t] + (f" {_ONES[r]}" if r else "")
+    if n < 1000:
+        h, r = divmod(n, 100)
+        return f"{_ONES[h]} hundred" + (f" {_int_to_words(r)}" if r else "")
+    if n < 100_000:
+        th, r = divmod(n, 1000)
+        return f"{_int_to_words(th)} thousand" + (f" {_int_to_words(r)}" if r else "")
+    if n < 10_000_000:
+        lk, r = divmod(n, 100_000)
+        return f"{_int_to_words(lk)} lakh" + (f" {_int_to_words(r)}" if r else "")
+    cr, r = divmod(n, 10_000_000)
+    return f"{_int_to_words(cr)} crore" + (f" {_int_to_words(r)}" if r else "")
+
+
+# Standalone integers up to 9 digits, with optional Indian comma grouping.
+# Deliberately NOT matched: decimals handled separately, 10+ digit runs
+# (phone numbers — those SHOULD be read digit-by-digit), times like 4:30.
+_NUM_RE = re.compile(r"(?<![\d.,:])(\d{1,3}(?:,\d{2,3})*|\d{1,9})(\.\d+)?(?![\d,:])")
+
+
+def spell_numbers_for_tts(text: str) -> str:
+    def _sub(m: re.Match) -> str:
+        whole = m.group(1).replace(",", "")
+        if len(whole) > 9:  # defensive: leave huge runs alone
+            return m.group(0)
+        words = _int_to_words(int(whole))
+        if m.group(2):  # decimal part: "1.5" -> "one point five"
+            digits = " ".join(_ONES[int(d)] for d in m.group(2)[1:])
+            words = f"{words} point {digits}"
+        return words
+
+    return _NUM_RE.sub(_sub, text)
+
+
 def prepare_for_tts(
     text: str,
     lang: str,
     pack: Mapping[str, str] | None = None,
 ) -> str:
-    """Sanitiser + pronunciation pack + per-language pacing.
+    """Sanitiser + number spelling + pronunciation pack + per-language pacing.
 
     Single entry point for TTS-bound text. Pack substitution runs *before*
     pacing so Tamil ellipsis insertion sees the final spelling, and it
@@ -304,6 +359,7 @@ def prepare_for_tts(
     cleaned = sanitize_for_tts(text)
     if not cleaned:
         return cleaned
+    cleaned = spell_numbers_for_tts(cleaned)
     if pack:
         cleaned = apply_pronunciation_pack(cleaned, pack)
     if lang == "ta-IN":
