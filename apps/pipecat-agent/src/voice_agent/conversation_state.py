@@ -51,7 +51,10 @@ EXTENSION_CONFIDENCE_FLOOR = 0.6
 
 # Anti-repetition rolling window: last N Priya turns kept verbatim in
 # context with rule "do not paraphrase your own recent turns".
-RECENT_TURNS_WINDOW = 4
+# 8 turns ≈ a full qualification arc (intent→locality→BHK→budget→slot→
+# confirm). 4 was too small — the lead's "rent" answer fell out of the
+# window before the budget question, producing crore-questions to renters.
+RECENT_TURNS_WINDOW = 8
 
 # Minimum fillers per N turns. If Priya goes 3 turns without "ji/haan/
 # achha/right/okay", the audit flags it.

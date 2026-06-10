@@ -935,13 +935,33 @@ class _FastapiWSAdapter:
         return await self._ws.receive_text()
 
 
+# One keep-alive HTTP client for the whole process. A fresh per-call client
+# paid full TLS handshakes to Sarvam/Groq/Smallest on every call — live logs
+# showed 1.8-2.5s first-STT and ~2.2s first-TTS spikes that vanish once the
+# connections are pooled and warm.
+_shared_http: httpx.AsyncClient | None = None
+
+
+def _get_shared_http() -> httpx.AsyncClient:
+    global _shared_http
+    if _shared_http is None or _shared_http.is_closed:
+        _shared_http = httpx.AsyncClient(
+            timeout=15.0,
+            limits=httpx.Limits(
+                max_connections=24,
+                max_keepalive_connections=12,
+                keepalive_expiry=60.0,
+            ),
+        )
+    return _shared_http
+
+
 def _build_deps_from_env() -> TurnDependencies:
     """Build TurnDependencies from env vars. Mirrors local_audio._build_deps so
     the phone path uses the SAME low-latency stack as the local harness:
-    Sarvam STT + Groq Llama-4-Scout LLM + Cartesia Sonic-3.5 TTS.
+    Sarvam STT + Groq LLM + sentence-streamed TTS.
 
-    Each call gets fresh httpx clients; in production we'd pool these but
-    per-call clients keep tests trivial."""
+    All adapters share one keep-alive httpx client (see _get_shared_http)."""
     from .local_audio import (
         _CartesiaTTSAdapter,
         _ElevenLabsTTSAdapter,
@@ -981,7 +1001,7 @@ def _build_deps_from_env() -> TurnDependencies:
             "GROQ_API_KEY or GEMINI_API_KEY must be set (LLM)",
         )
 
-    http = httpx.AsyncClient(timeout=15.0)
+    http = _get_shared_http()
 
     try:
         r2_cfg = R2Config.from_env()

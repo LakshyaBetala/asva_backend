@@ -963,6 +963,29 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
     if turn == 0:
         parts.append('[Intro DONE. Do not introduce yourself.]')
 
+    # ROLLING TRANSCRIPT — the context fix. Before this, the LLM saw only the
+    # lead's CURRENT sentence + Priya's single last line; everything the lead
+    # said earlier ("rent pe dekh raha hoon", "Anna Nagar side") vanished, so
+    # the model re-asked answered questions and asked crore-budget to a rent
+    # lead (call 3ec7c49d). record_lead_turn() runs before this formatter, so
+    # the current utterance is the LAST entry — exclude it from history.
+    lead_hist = conv.recent_lead_turns[:-1] if conv.recent_lead_turns else []
+    priya_hist = list(conv.recent_priya_turns)
+    if lead_hist:
+        lines = []
+        # Interleave oldest-first. Priya replies follow lead turns 1:1 in the
+        # normal flow; mismatched lengths just truncate to the shorter side.
+        offset = len(priya_hist) - len(lead_hist)
+        for i, lt in enumerate(lead_hist):
+            lines.append(f"Lead: {lt}")
+            pi = i + offset
+            if 0 <= pi < len(priya_hist):
+                lines.append(f"You: {priya_hist[pi]}")
+        parts.append(
+            "[CONVERSATION SO FAR — the lead already told you this. NEVER "
+            "re-ask anything answered below; build on it.]\n" + "\n".join(lines[-12:])
+        )
+
     last_priya = conv.recent_priya_turns[-1] if conv.recent_priya_turns else ""
     if lang == "ta-IN":
         # Strong pin + pronunciation guard: examples in the system prompt skew
