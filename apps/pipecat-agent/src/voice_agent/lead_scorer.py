@@ -22,8 +22,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "gemini-2.5-flash"
 
 SCORING_PROMPT = """\
-You are scoring a B2B sales call for Supreme Petrochemicals, Chennai.
-The agent (Priya) made a Tamil/Hindi/English outbound cold call.
+You are scoring a real-estate broker's outbound site-visit call.
+The agent (Priya) called a property lead in Hindi/English/Tamil. Her ONLY
+goal is to book a site visit on the broker's calendar.
 
 Output ONLY valid JSON, no prose, no markdown:
 
@@ -32,30 +33,30 @@ Output ONLY valid JSON, no prose, no markdown:
   "score_0_100": integer,
   "reason": string (one sentence, why this classification),
   "summary": string (2-3 sentences, what happened on the call),
-  "next_action": string (one concrete action for the human team)
+  "next_action": string (one concrete action for the broker's team)
 }
 
 Rules for classification:
-  hot   = explicit buying signal (asked for quote, gave volume + timeline <= 30d,
-          named decision-maker, said "send sample/proforma")
-  warm  = engaged, qualified as a real buyer, but no immediate ask
-          (knows the product, has supplier history, may buy in 1-3 months)
-  cold  = answered but no real interest signal / wrong fit / brushed off
+  hot   = agreed to a site visit (gave or accepted a day + time), OR gave clear
+          buy/rent intent + locality + budget/BHK and asked to see options
+  warm  = engaged real buyer/renter — shared locality, BHK, budget or timeline
+          but did NOT commit to a visit yet (follow up in a few days)
+  cold  = answered but no real interest / just browsing / wrong fit
   dead  = abused, hung up immediately, wrong number, DND, language barrier
 
 Score rubric (0-100):
-  90-100 = hot, must call back today
+  90-100 = hot, confirm the visit / call back today
   70-89  = warm, follow-up within 3 days
   40-69  = cold, monthly nurture
   0-39   = dead, do-not-call
 
 next_action options (pick one):
-  - "human_callback_today" — hot, time-sensitive
-  - "send_quote" — they asked for quote/pricing
-  - "send_proforma" — they asked for proforma invoice
-  - "send_sample" — they asked for samples
-  - "followup_3d" — warm, schedule follow-up in 3 days
-  - "followup_30d" — cold, schedule monthly nurture
+  - "book_site_visit" — they agreed to a slot; confirm it on the calendar
+  - "human_callback_today" — hot, time-sensitive, broker should call now
+  - "send_listings" — share matching listings on WhatsApp
+  - "send_brochure" — send project brochure / details
+  - "followup_3d" — warm, follow up in 3 days
+  - "followup_30d" — cold, monthly nurture
   - "dnc" — dead, mark do-not-call
 
 Extracted slots (Priya's understanding at call end):
@@ -78,8 +79,11 @@ class LeadScore:
 
 _VALID_CLASSIFICATIONS = {"hot", "warm", "cold", "dead"}
 _VALID_ACTIONS = {
-    "human_callback_today", "send_quote", "send_proforma",
-    "send_sample", "followup_3d", "followup_30d", "dnc",
+    # Broker actions
+    "book_site_visit", "human_callback_today", "send_listings",
+    "send_brochure", "followup_3d", "followup_30d", "dnc",
+    # Legacy keys (back-compat with old rows / chemicals tenant)
+    "send_quote", "send_proforma", "send_sample",
 }
 
 
@@ -162,7 +166,7 @@ async def score_call(
     prompt = _build_prompt(transcript_turns=transcript_turns, slots=slots)
     try:
         resp = await gemini_generate(
-            system_message="You are a strict JSON-only B2B sales call scorer for Tamil/Hindi/English calls.",
+            system_message="You are a strict JSON-only real-estate site-visit call scorer for Hindi/English/Tamil calls.",
             user_message=prompt,
             api_key=api_key,
             model=model,

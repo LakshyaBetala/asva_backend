@@ -20,7 +20,7 @@ export default async function LeadsPage() {
   const { data: leads, error } = await supabase
     .from("leads")
     .select(
-      "id,name,phone_e164,company,industry,status,created_at,lead_scores(score_0_100,classification,scored_at)",
+      "id,name,phone_e164,company,industry,status,created_at,lead_scores(score_0_100,classification,scored_at,next_action,extracted)",
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -38,9 +38,9 @@ export default async function LeadsPage() {
 
         <header className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Leads</h1>
-            <p className="text-sm text-muted-foreground">
-              Pipeline view — filter by score, search across fields, call from any row.
+            <h1 className="font-display text-3xl font-semibold tracking-tight">Leads</h1>
+            <p className="mt-1 text-muted-foreground">
+              Filter by score, search by locality or budget, call from any row.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

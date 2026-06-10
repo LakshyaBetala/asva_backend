@@ -136,8 +136,8 @@ export default async function SettingsPage() {
 
           <div className="rounded-md border border-dashed p-3 space-y-3">
             <p className="text-xs text-muted-foreground">
-              Billing &amp; cost guardrails. Defaults match the SPC pricing
-              tier (₹15k/mo · 2000 units · 10% wiggle).
+              Billing &amp; cost guardrails. Defaults match the Growth plan
+              (₹15k/mo · 2000 credits · 10% wiggle).
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -180,7 +180,7 @@ export default async function SettingsPage() {
                 />
               </div>
               <div>
-                <Label>Avg order size (₹)</Label>
+                <Label>Avg deal value (₹)</Label>
                 <Input
                   name="avg_order_size_inr"
                   type="number"

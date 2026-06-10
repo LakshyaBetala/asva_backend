@@ -54,6 +54,7 @@ from .streaming_orchestrator import (
     AudioChunkEvent,
     StreamingDependencies,
     TurnCompleteEvent,
+    prepare_intro_for_tts,
     run_turn_streaming,
 )
 from .supabase_client import (
@@ -281,19 +282,32 @@ async def _play_wav(
 async def _play_text(
     session: ExotelStreamSession, active: _ActiveCall, text: str
 ) -> float:
-    """Synthesize `text` live, then stream it. Slower path — prefer pre-synth."""
+    """Synthesize the intro `text` live, then stream it. Slower path — prefer
+    pre-synth. Runs the text through prepare_intro_for_tts so the tenant
+    pronunciation pack (e.g. "XYZ Broker" -> "Eks Why Zee Broker") + Tamil
+    pacing are applied — otherwise the greeting is the one line that NEVER
+    got pack treatment, which is why the company/area names came out garbled."""
     if not text.strip():
         return 0.0
     lang = active.ctx.language_state.current.value
-    wav = await active.deps.tts.synth(text, lang)
+    pack = active.tenant.pronunciation_pack if active.tenant is not None else None
+    spoken = prepare_intro_for_tts(text, lang, pack)
+    wav = await active.deps.tts.synth(spoken, lang)
+    # Record the ORIGINAL text (not the pacing-mangled form) for echo/dedupe.
     return await _play_wav(session, active, wav, text)
 
 
 async def _presynth_intro(active: _ActiveCall, text: str) -> None:
-    """Synthesize the intro during the ring so pickup has zero dead air."""
+    """Synthesize the intro during the ring so pickup has zero dead air.
+
+    The text is pack-substituted + paced via prepare_intro_for_tts before
+    synthesis so the pre-rendered greeting audio pronounces the company and
+    locality names correctly (the live path does the same)."""
     try:
         lang = active.ctx.language_state.current.value
-        active.intro_audio = await active.deps.tts.synth(text, lang)
+        pack = active.tenant.pronunciation_pack if active.tenant is not None else None
+        spoken = prepare_intro_for_tts(text, lang, pack)
+        active.intro_audio = await active.deps.tts.synth(spoken, lang)
     except Exception:
         logger.exception("intro pre-synth failed; will synth live on connect")
 

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { FileText } from "lucide-react";
 
 const COLUMNS = ["name", "phone", "company", "industry", "source", "notes"] as const;
 const MAX_PREVIEW_ROWS = 5;
@@ -95,12 +96,12 @@ export function CsvUploadDialog() {
         <DialogHeader>
           <DialogTitle>Upload leads CSV</DialogTitle>
           <p className="mt-1 text-xs text-muted-foreground">
-            Required columns: <code className="rounded bg-slate-100 px-1">name</code>,{" "}
-            <code className="rounded bg-slate-100 px-1">phone</code>. Optional:{" "}
-            <code className="rounded bg-slate-100 px-1">company</code>,{" "}
-            <code className="rounded bg-slate-100 px-1">industry</code>,{" "}
-            <code className="rounded bg-slate-100 px-1">source</code>,{" "}
-            <code className="rounded bg-slate-100 px-1">notes</code>. Max 10,000 rows.
+            Required columns: <code className="rounded bg-muted px-1">name</code>,{" "}
+            <code className="rounded bg-muted px-1">phone</code>. Optional:{" "}
+            <code className="rounded bg-muted px-1">company</code>,{" "}
+            <code className="rounded bg-muted px-1">industry</code>,{" "}
+            <code className="rounded bg-muted px-1">source</code>,{" "}
+            <code className="rounded bg-muted px-1">notes</code>. Max 10,000 rows.
           </p>
         </DialogHeader>
 
@@ -120,11 +121,11 @@ export function CsvUploadDialog() {
             "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 transition",
             dragOver
               ? "border-primary bg-primary/5"
-              : "border-slate-200 bg-slate-50/50 hover:bg-slate-50",
+              : "border-border bg-muted/40 hover:bg-muted/60",
           )}
         >
-          <span className="text-3xl" aria-hidden>📄</span>
-          <span className="text-sm font-medium text-slate-700">
+          <FileText className="h-8 w-8 text-muted-foreground" aria-hidden />
+          <span className="text-sm font-medium text-foreground">
             {file ? file.name : "Drop a CSV here or click to choose"}
           </span>
           <span className="text-[11px] text-muted-foreground">
@@ -146,25 +147,25 @@ export function CsvUploadDialog() {
                 {Math.min(MAX_PREVIEW_ROWS, parsed.totalRows)}
               </span>
               {missingColumns.length > 0 ? (
-                <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700">
+                <span className="rounded-full bg-hot/10 px-2 py-0.5 text-[11px] font-medium text-hot">
                   Missing: {missingColumns.join(", ")}
                 </span>
               ) : (
-                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-medium text-brand">
                   Columns OK
                 </span>
               )}
             </div>
-            <div className="overflow-hidden rounded-md border border-slate-200">
+            <div className="overflow-hidden rounded-md border border-border">
               <table className="w-full text-xs">
-                <thead className="bg-slate-50">
+                <thead className="bg-muted/40">
                   <tr>
                     {parsed.headers.map((h, i) => (
                       <th
                         key={i}
                         className={cn(
                           "px-2 py-1.5 text-left font-medium",
-                          (h === "name" || h === "phone") && "text-emerald-700",
+                          (h === "name" || h === "phone") && "text-brand",
                         )}
                       >
                         {h}
@@ -174,9 +175,9 @@ export function CsvUploadDialog() {
                 </thead>
                 <tbody>
                   {parsed.rows.slice(0, MAX_PREVIEW_ROWS).map((r, ri) => (
-                    <tr key={ri} className="border-t border-slate-100">
+                    <tr key={ri} className="border-t border-border">
                       {parsed.headers.map((_, ci) => (
-                        <td key={ci} className="truncate px-2 py-1 text-slate-700">
+                        <td key={ci} className="truncate px-2 py-1 text-foreground/80">
                           {r[ci] ?? "—"}
                         </td>
                       ))}

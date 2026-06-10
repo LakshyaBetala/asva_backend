@@ -1,17 +1,33 @@
 import { Badge } from "@/components/ui/badge";
 
 const color: Record<string, string> = {
-  new: "bg-slate-100 text-slate-800 border-slate-200",
-  queued: "bg-blue-100 text-blue-800 border-blue-200",
-  calling: "bg-amber-100 text-amber-800 border-amber-200",
-  called: "bg-gray-100 text-gray-800 border-gray-200",
-  hot: "bg-red-100 text-red-800 border-red-200",
-  warm: "bg-orange-100 text-orange-800 border-orange-200",
-  cold: "bg-zinc-100 text-zinc-800 border-zinc-200",
-  do_not_call: "bg-black text-white border-black",
-  needs_review: "bg-purple-100 text-purple-800 border-purple-200",
+  new: "bg-muted text-muted-foreground border-border",
+  queued: "bg-cold/10 text-cold border-cold/20",
+  calling: "bg-warm/10 text-warm border-warm/20",
+  called: "bg-muted text-foreground border-border",
+  hot: "bg-hot/10 text-hot border-hot/20",
+  warm: "bg-warm/10 text-warm border-warm/20",
+  cold: "bg-cold/10 text-cold border-cold/20",
+  do_not_call: "bg-foreground text-background border-foreground",
+  needs_review: "bg-accent text-accent-foreground border-brand/20",
+};
+
+const label: Record<string, string> = {
+  new: "New",
+  queued: "Queued",
+  calling: "Calling",
+  called: "Called",
+  hot: "Hot",
+  warm: "Warm",
+  cold: "Cold",
+  do_not_call: "Do-not-call",
+  needs_review: "Needs review",
 };
 
 export function LeadStatusBadge({ status }: { status: string }) {
-  return <Badge className={color[status] ?? "bg-slate-100"}>{status}</Badge>;
+  return (
+    <Badge className={color[status] ?? "bg-muted text-muted-foreground border-border"}>
+      {label[status] ?? status}
+    </Badge>
+  );
 }

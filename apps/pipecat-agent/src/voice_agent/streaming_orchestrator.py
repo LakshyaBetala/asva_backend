@@ -144,6 +144,11 @@ def sanitize_for_tts(text: str) -> str:
     English), 'Translation:' / 'Note:' prefixes, and leading/trailing
     quotation marks added by the LLM dressing up its reply.
 
+    Also catches the "I understand you received a recorded message"
+    hallucination — when STT garbles a one-word lead reply as "Recorded",
+    the LLM infers context and apologises for sending a recording. Replace
+    with a gentle re-prompt instead.
+
     Order matters: trim whitespace BEFORE stripping wrapping quotes, otherwise
     leading/trailing spaces hide the quote chars from the anchored regex.
     """
@@ -152,7 +157,45 @@ def sanitize_for_tts(text: str) -> str:
     cleaned = _PARENS_RE.sub("", text)
     cleaned = _TRANSLATION_PREFIX.sub("", cleaned)
     cleaned = _WRAPPING_QUOTES.sub("", cleaned.strip()).strip()
+    # Hallucination filter — strip the recorded-message apology completely.
+    # If the whole reply is just this phrase, swap for a polite re-prompt.
+    cleaned = _RECORDED_HALLUCINATION_RE.sub("", cleaned).strip()
+    # Strip repetitive "Got it, Laksh." / "Hi Laksh," opening — they sound
+    # like a stuck record after the first turn.
+    cleaned = _NAME_ECHO_RE.sub("", cleaned).strip()
+    # Capitalize first letter after strip
+    if cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    if not cleaned:
+        cleaned = "Sorry sir, didn't catch that. Are you looking to buy or to rent?"
     return cleaned
+
+
+# Catches every variant of "I understand/see/think you (have) received/got
+# a/the (pre-)recorded message/call" that the LLM produces when STT garbles
+# a one-word lead reply ("Recorded" / "Hello" / "Yes"). Drops these
+# sentences entirely from the TTS output. Case-insensitive.
+_RECORDED_HALLUCINATION_RE = re.compile(
+    r"\bI\s+(?:understand|see|think|know|noticed|hear)\s+(?:that\s+)?"
+    r"(?:you\s+)?(?:have\s+|just\s+)?(?:received|got|heard)\s+"
+    r"(?:a|the|my|our)?\s*(?:pre-?)?recorded\s+(?:message|call|voice|note)\.?",
+    re.IGNORECASE,
+)
+
+# Strip repetitive "Got it, Laksh." / "Hi Laksh, " prefixes that the LLM
+# attaches to every turn. After the intro the lead already knows their name —
+# repeating it on every reply makes Priya sound like a broken record. The
+# regex catches: "Got it [Name][.,]" / "Hi [Name][.,]" / "Hello [Name][.,]"
+# at sentence start, plus "Achha [Name]" / "Haan [Name] ji" (Hindi variants).
+_NAME_ECHO_RE = re.compile(
+    r"^(?:"
+    r"(?:Got it|Hi|Hello|Hey|Okay|Sure|Right|Achha|Haan|Sari|Yes)"
+    r"(?:,?\s+[A-Z][a-zA-Z]+)?"
+    r"(?:\s+ji)?"
+    r"[\.,!\s]+"
+    r")+",
+    re.IGNORECASE,
+)
 
 
 # -- Tamil pacing pre-processor --------------------------------------------
@@ -266,6 +309,34 @@ def prepare_for_tts(
     if lang == "ta-IN":
         cleaned = pace_for_ta_tts(cleaned)
     return cleaned
+
+
+def prepare_intro_for_tts(
+    text: str,
+    lang: str,
+    pack: Mapping[str, str] | None = None,
+) -> str:
+    """Prepare the OPENING line for TTS.
+
+    Critical difference from prepare_for_tts: the intro is the one place we
+    deliberately say the lead's name and the company name, so we MUST NOT run
+    the per-turn reply sanitiser — its name-echo stripper would delete the
+    leading "Hi Laksh," / "Namaste Laksh ji" and the whole greeting collapses.
+
+    Historically the intro was synthesised from RAW template text and never
+    saw the pronunciation pack at all — which is exactly why "XYZ Broker" came
+    out of the TTS garbled on every call ("Hi XYZ is not pronounced"). The
+    pack maps it to "Eks Why Zee Broker"; we apply that here, plus the Tamil
+    breath-pacing pass, and nothing else.
+    """
+    if not text:
+        return text
+    out = text.strip()
+    if pack:
+        out = apply_pronunciation_pack(out, pack)
+    if lang == "ta-IN":
+        out = pace_for_ta_tts(out)
+    return out
 
 
 # -- Main streaming entry point ---------------------------------------------
@@ -421,14 +492,23 @@ async def run_turn_streaming(
         )
     )
 
-    # Accumulate LLM tokens, split by sentence, TTS + yield each sentence
+    # Accumulate LLM tokens, split by sentence, TTS + yield each sentence.
+    # HARD CAP: only the first MAX_SENTENCES_PER_TURN sentences are spoken;
+    # anything the LLM generates after that is silently dropped. The prompt
+    # asks for <=2 sentences but the LLM regularly produces 4-5 — this code
+    # cap is the only thing that reliably enforces brevity on the line.
+    MAX_SENTENCES_PER_TURN = 2
+
     sentence_buffer = ""
     full_text_parts: list[str] = []
     sentence_idx = 0
     cache_hits = 0
     first_sentence_done = False
+    cap_reached = False
 
     async for chunk in deps.llm.stream_respond(system_msg, user_msg):
+        if cap_reached:
+            break  # stop consuming LLM tokens once cap hit
         sentence_buffer += chunk
 
         # Check for sentence boundary
@@ -436,6 +516,9 @@ async def run_turn_streaming(
         if len(sentences) > 1:
             # All but last are complete sentences → TTS + yield
             for complete_sentence in sentences[:-1]:
+                if sentence_idx >= MAX_SENTENCES_PER_TURN:
+                    cap_reached = True
+                    break
                 spoken = prepare_for_tts(
                     complete_sentence,
                     transition.current_language.value,
@@ -476,13 +559,13 @@ async def run_turn_streaming(
 
             sentence_buffer = sentences[-1]  # keep incomplete tail
 
-    # Flush remaining buffer
+    # Flush remaining buffer (skipped if cap already reached)
     tail = prepare_for_tts(
         sentence_buffer.strip(),
         transition.current_language.value,
         deps.pronunciation_pack,
     )
-    if tail:
+    if tail and sentence_idx < MAX_SENTENCES_PER_TURN:
         if not first_sentence_done:
             timings["llm_first_sentence_ms"] = int(
                 (time.monotonic() - llm_t0) * 1000
@@ -836,6 +919,22 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
     turn = len(conv.recent_priya_turns)
     is_silence = intent == "silence"
 
+    # PROACTIVE CLOSE — detect visit-asks AND auto-close after 2 turns.
+    # The base prompt asks Priya to drive toward a slot, but the LLM keeps
+    # asking budget/school/timeline questions instead. This code-level
+    # directive overrides that drift.
+    lead_lc = (lead_text or "").lower()
+    _VISIT_ASK_KEYWORDS = (
+        "site visit", "site-visit", "schedule a visit", "schedule visit",
+        "book a visit", "book visit", "appointment", "visit kab",
+        "visit kar", "visit kab", "kab visit", "visit ke liye",
+        "visit la", "site la", "site varuven", "site varum",
+        "visit aanaa", "visit panna", "appointment podu",
+    )
+    lead_wants_visit = any(k in lead_lc for k in _VISIT_ASK_KEYWORDS)
+    # After 2 lead turns, force the close — don't wait for them to ask.
+    force_proactive_close = turn >= 2 and intent in ("normal", "backchannel")
+
     parts = ['[ROMAN SCRIPT ONLY. No Devanagari. No Tamil script.]']
 
     if turn == 0:
@@ -862,30 +961,78 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         if last_priya:
             parts.append(f'[Your last reply (Tamil): "{last_priya}"]')
     elif lang == "en-IN":
-        parts.append('[ENGLISH. Indian-cadence English only — no Hindi, no Tamil.]')
+        parts.append(
+            '[ENGLISH. Indian-cadence English ONLY. ZERO Hindi words. '
+            'ZERO Tamil words. Do NOT mix languages. If lead replied in '
+            'Hindi/Tamil but state is still en-IN, keep replying English — '
+            'lead will trigger an explicit switch when ready.]'
+        )
         if last_priya:
             parts.append(f'[Your last reply (English): "{last_priya}"]')
     else:
         parts.append(
-            '[HINGLISH. Hindi grammar + English business words. '
-            'No Tamil grammar (no "irukku", "tharen", "panren", "sariya").]'
+            '[HINDI. Reply in Hindi (romanized OK, e.g. "Bilkul sir, '
+            'budget kya hai?"). ZERO English sentences. Only use English '
+            'for property nouns (BHK, sqft, lakh, crore, area names). '
+            'NEVER reply "Got it, sir" or "Sure, so you want..." — those '
+            'are English sentences. Reply structure: ack in Hindi → one '
+            'short Hindi question. No Tamil grammar (no "irukku", "tharen", '
+            '"panren").]'
         )
         if last_priya:
             parts.append(f'[Your last reply (Hindi): "{last_priya}"]')
 
     if is_silence:
-        parts.append('Lead silent. Ask once gently: "Sir, sun pa rahe hain?"')
+        # Language-aware silence prompt — say it in whatever the lead's
+        # current language is. Previously hardcoded Hindi, which broke
+        # English calls (lead heard random Hindi mid-EN conversation).
+        if lang == "ta-IN":
+            parts.append('Lead silent. Ask once gently: "Sir, line clear-aa keka mudiyutha?"')
+        elif lang == "en-IN":
+            parts.append('Lead silent. Ask once gently: "Sir, are you there? Can you hear me?"')
+        else:
+            parts.append('Lead silent. Ask once gently: "Sir, sun pa rahe hain?"')
         return "\n".join(parts)
 
     parts.append(f'Lead: "{lead_text}"')
+
+    # FORCE-CLOSE override: if lead asked for a visit, OR we've had 2+ turns
+    # already, INJECT the closing script. This overrides all other intent
+    # branches below. The LLM keeps drifting into school/budget questions
+    # instead of closing — this is the code-level kill switch.
+    if lead_wants_visit or force_proactive_close:
+        if lang == "ta-IN":
+            close_line = (
+                "Sari sir, Saturday kaalai 11 mani site visit reserve pannuren. "
+                "Address-um broker uncle contact-um indha WhatsApp number-ku "
+                "ippo anuppuren. Saturday paarpom!"
+            )
+        elif lang == "en-IN":
+            close_line = (
+                "Got it sir, I'm reserving a Saturday 11 AM site visit for you. "
+                "Sending the address and broker uncle's contact to this WhatsApp "
+                "number right now. See you Saturday!"
+            )
+        else:
+            close_line = (
+                "Bilkul sir, Saturday subah 11 baje ka site visit slot reserve "
+                "kar deti hoon. Address aur broker uncle ka contact iss WhatsApp "
+                "number pe abhi bhej rahi hoon. Saturday ko milte hain!"
+            )
+        parts.append(
+            f'[PROACTIVE CLOSE — lead has named locality / asked for visit / been talking for 2+ turns. '
+            f'Say EXACTLY: "{close_line}" Then STOP. No more questions. No "Got it Laksh". '
+            f'Do NOT ask budget, school, BHK, timeline. Just close the visit.]'
+        )
+        return "\n".join(parts)
 
     if intent == "backchannel":
         if conv.backchannel_count >= 2:
             parts.append(
                 'Lead is just listening passively (only said "' + lead_text.strip()
                 + '"), not answering. STOP explaining. Ask ONE short, direct question to '
-                'pull them in — e.g. abhi kaunsa chemical use karte hain, ya monthly kitna '
-                'volume lagta hai. Do NOT repeat your previous question.'
+                'pull them in — e.g. aapka budget kya hai, ya kitne BHK chahiye, ya kis '
+                'locality mein dekh rahe hain. Do NOT repeat your previous question.'
             )
         else:
             parts.append(
@@ -922,7 +1069,7 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
             f'Lead did NOT catch you. Your last line was: "{last_priya}". '
             'REPHRASE that idea — DO NOT repeat it verbatim. '
             'Use simpler/shorter words, add a "..." pause, spell tricky terms '
-            'phonetically (kemicals only — keep rate/price/quote/delivery as plain English). '
+            'phonetically — keep budget/BHK/locality/visit/calendar as plain English. '
             'Drop one detail if packed. Stay in the SAME language the lead used. '
             'One short sentence, then a question if natural. NEVER copy your '
             'previous sentence word-for-word. NEVER quote the lead\'s words back '
@@ -932,26 +1079,26 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
 
     if intent == "close":
         if lang == "ta-IN":
-            parts.append('Lead wants to CLOSE. Say ONLY: "Sari sir, indha number ku WhatsApp la quote varum, team call pannuvaanga. Thank you sir!" Then STOP.')
+            parts.append('Lead wants to CLOSE. Say ONLY: "Sari sir, indha number ku WhatsApp la property details + site visit slot anuppuren, team confirm pannuvaanga. Thank you sir!" Then STOP.')
         elif lang == "en-IN":
-            parts.append('Lead wants to CLOSE. Say ONLY: "Got it sir, our team will send a quote on WhatsApp to this number. Thank you, sir!" Then STOP.')
+            parts.append('Lead wants to CLOSE. Say ONLY: "Got it sir, our team will send the property details + site visit slot on WhatsApp to this number. Thank you, sir!" Then STOP.')
         else:
-            parts.append('Lead wants to CLOSE. Say ONLY: "Bilkul sir, isi number pe WhatsApp pe quote aa jayega. Thank you!" Then STOP.')
+            parts.append('Lead wants to CLOSE. Say ONLY: "Bilkul sir, isi number pe WhatsApp pe property details aur site visit slot bhej dete hain. Thank you!" Then STOP.')
     elif intent == "reject":
         if conv.reject_count >= 2:
             if lang == "ta-IN":
-                parts.append('Still no. Warm exit: "Sari sir, requirement vandha SPC ku call pannunga. Thank you sir!" Then STOP.')
+                parts.append('Still no. Warm exit: "Sari sir, naala property thedumbothu Almmatix-ku call pannunga. Thank you sir!" Then STOP.')
             elif lang == "en-IN":
-                parts.append('Still no. Warm exit: "No problem sir, whenever you need chemicals do remember SPC. Good day!" Then STOP.')
+                parts.append('Still no. Warm exit: "No problem sir, whenever you start looking for a property do remember Almmatix. Good day!" Then STOP.')
             else:
-                parts.append('Still no. Warm exit: "Koi baat nahi sir, zarurat ho to SPC yaad rakhiyega. Good day!" Then STOP.')
+                parts.append('Still no. Warm exit: "Koi baat nahi sir, ghar dekhna ho to Almmatix yaad rakhiyega. Good day!" Then STOP.')
         else:
             if lang == "ta-IN":
-                parts.append('Lead not interested. Don\'t push — ask for a REFERRAL ONCE: "Sari sir. Ungal nanban yaaravadhu chemicals venum-na, indha number ku sollunga, naanga nalla service kuduppom."')
+                parts.append('Lead not interested. Don\'t push — ask for a REFERRAL ONCE: "Sari sir. Ungal nanban yaaravadhu ghar or flat thedanna, indha number ku sollunga, naanga nalla site visit set pannuvom."')
             elif lang == "en-IN":
-                parts.append('Lead not interested. Don\'t push — ask for a REFERRAL ONCE: "No problem sir. If anyone you know needs chemical supplies, do share our number — we will look after them well."')
+                parts.append('Lead not interested. Don\'t push — ask for a REFERRAL ONCE: "No problem sir. If anyone you know is looking for a property, do share our number — we will arrange site visits for them."')
             else:
-                parts.append('Lead not interested. Don\'t push — ask for a REFERRAL once: "Koi baat nahi sir. Aapke kisi jaan-pehchaan ko chemicals supply chahiye to bata dijiye, hum acchi service denge?"')
+                parts.append('Lead not interested. Don\'t push — ask for a REFERRAL once: "Koi baat nahi sir. Aapke kisi jaan-pehchaan ko ghar dhoondhna ho to bata dijiye, hum site visit set kar denge?"')
     elif intent == "abuse":
         if lang == "ta-IN":
             parts.append('Lead abusive. Say ONLY: "Sari sir, good day." Nothing else.')
@@ -976,11 +1123,11 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
                 parts.append('Still off-topic. End: "Koi baat nahi sir, good day!" STOP.')
         else:
             if lang == "ta-IN":
-                parts.append('Lead off-topic. Probe ONCE: "Sir, ungal business la chemicals or industrial supply requirement irukkaa sir?"')
+                parts.append('Lead off-topic. Probe ONCE: "Sir, ungalukku ipo ghar or flat thedanum-aa, illa investment-kana property paakareenga sir?"')
             elif lang == "en-IN":
-                parts.append('Lead off-topic. Probe ONCE: "Sir, does your business have any chemicals or industrial supply requirement?"')
+                parts.append('Lead off-topic. Probe ONCE: "Sir, are you actively looking for a home, or scouting for an investment property right now?"')
             else:
-                parts.append('Lead off-topic. Probe ONCE: "Sir, koi chemicals ya industrial supply ki requirement hai aapke business mein?"')
+                parts.append('Lead off-topic. Probe ONCE: "Sir, abhi aap ghar dhoondh rahe hain ya investment ke liye property dekh rahe hain?"')
     else:
         # ---- Tire-kicker exit (5 unproductive turns in a row) ----
         # Threshold was 3 — too aggressive for Tamil/Hindi cold calls where
@@ -991,18 +1138,18 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         if conv.unproductive_turn_count >= 5:
             if lang == "ta-IN":
                 exit_phrase = (
-                    "Sari sir, ungalukku enna venum-nu confirm aana, SPC ku "
+                    "Sari sir, ungalukku enna property venum-nu confirm aana, Almmatix-ku "
                     "call pannunga... naan help pannuren. Thank you sir!"
                 )
             elif lang == "en-IN":
                 exit_phrase = (
-                    "No worries sir, whenever you have a specific requirement, "
-                    "do remember SPC. Thank you for your time, sir!"
+                    "No worries sir, whenever you have a specific property requirement, "
+                    "do remember Almmatix. Thank you for your time, sir!"
                 )
             else:
                 exit_phrase = (
-                    "Koi baat nahin sir, jab bhi specific requirement ho, SPC "
-                    "yaad rakhiyega. Aapka time diya, thank you sir!"
+                    "Koi baat nahin sir, jab bhi koi specific property dhoondhni ho, "
+                    "Almmatix yaad rakhiyega. Aapka time diya, thank you sir!"
                 )
             parts.append(
                 f'[EXIT NOW. Lead is not a qualifying buyer ('
@@ -1105,7 +1252,7 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         # a "do not re-ask" reminder.
         known: list[str] = []
         if slots.product_interest:
-            known.append(f"product/chemicals: {slots.product_interest}")
+            known.append(f"product/interest: {slots.product_interest}")
         if slots.volume_monthly_kg:
             known.append(f"monthly volume: ~{slots.volume_monthly_kg}kg")
         if getattr(slots.buying_frequency, "value", "unknown") not in ("unknown", None):

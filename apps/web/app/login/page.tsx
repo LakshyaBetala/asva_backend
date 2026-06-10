@@ -9,8 +9,8 @@ export default function LoginPage() {
   return (
     <main className="mx-auto mt-24 max-w-sm space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-semibold">Sign in</h1>
-        <p className="text-sm text-muted-foreground">AI Voice CRM — Supreme Petrochemicals</p>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">Sign in</h1>
+        <p className="text-sm text-muted-foreground">Almmatix Voice — Broker CRM</p>
       </div>
       <form
         action={async (fd: FormData) => {
@@ -21,7 +21,7 @@ export default function LoginPage() {
       >
         <div>
           <Label htmlFor="email">Email</Label>
-          <Input id="email" name="email" type="email" required defaultValue="admin@spc.test" />
+          <Input id="email" name="email" type="email" required placeholder="you@brokerage.in" />
         </div>
         <div>
           <Label htmlFor="password">Password</Label>

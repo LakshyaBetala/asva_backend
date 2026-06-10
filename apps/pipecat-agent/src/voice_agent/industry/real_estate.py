@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from voice_agent.tenant_config import TenantConfig
 
 
-_SUPPORTED_LANGS = ("en-IN", "hi-IN", "mr-IN", "kn-IN", "te-IN")
+_SUPPORTED_LANGS = ("en-IN", "hi-IN", "ta-IN", "mr-IN", "kn-IN", "te-IN")
 
 
 # --- Locality knowledge ----------------------------------------------------
@@ -35,6 +35,14 @@ _SUPPORTED_LANGS = ("en-IN", "hi-IN", "mr-IN", "kn-IN", "te-IN")
 # the broker dashboard. Lowercased lookup → canonical English spelling.
 
 LOCALITIES: dict[str, tuple[str, ...]] = {
+    "Chennai": (
+        "T. Nagar", "Adyar", "Mylapore", "Velachery", "Anna Nagar",
+        "Besant Nagar", "Nungambakkam", "Kilpauk", "Egmore", "Pondy Bazaar",
+        "Tambaram", "Porur", "Sholinganallur", "OMR", "ECR", "Perambur",
+        "Vadapalani", "Saidapet", "Chromepet", "Pallikaranai", "Thoraipakkam",
+        "Adambakkam", "Guindy", "Kodambakkam", "Ashok Nagar", "Thiruvanmiyur",
+        "Madipakkam", "Medavakkam", "Navalur", "Kelambakkam", "Royapettah",
+    ),
     "Mumbai": (
         "Bandra West", "Bandra East", "Khar", "Santacruz West", "Santacruz East",
         "Juhu", "Andheri West", "Andheri East", "Powai", "Vikhroli", "Mulund",
@@ -81,6 +89,21 @@ LOCALITY_ALIASES: dict[str, str] = {
     "vakad": "Wakad", "hinjwadi": "Hinjewadi", "hinjawadi": "Hinjewadi",
     "kalyani": "Kalyani Nagar", "viman": "Viman Nagar",
     "indra nagar": "Indiranagar", "indira nagar": "Indiranagar",
+    # Chennai phonetic drifts (STT mishears these constantly on 8kHz lines).
+    "te nagar": "T. Nagar", "tee nagar": "T. Nagar", "tnagar": "T. Nagar",
+    "tinagar": "T. Nagar", "thyagaraya nagar": "T. Nagar", "t nagar": "T. Nagar",
+    "adayar": "Adyar", "adyaar": "Adyar", "adiyar": "Adyar",
+    "mylapur": "Mylapore", "mylaapore": "Mylapore", "mylai": "Mylapore",
+    "velacheri": "Velachery", "velasseri": "Velachery", "velachary": "Velachery",
+    "annanagar": "Anna Nagar", "anna nagar": "Anna Nagar",
+    "besent nagar": "Besant Nagar", "besant nagar": "Besant Nagar",
+    "nungabakkam": "Nungambakkam", "nungumbakkam": "Nungambakkam",
+    "omr road": "OMR", "old mahabalipuram road": "OMR",
+    "ecr road": "ECR", "east coast road": "ECR",
+    "solinganallur": "Sholinganallur", "cholinganallur": "Sholinganallur",
+    "tambram": "Tambaram", "thambaram": "Tambaram",
+    "chrompet": "Chromepet", "chromepet": "Chromepet",
+    "thiruvanmiyur": "Thiruvanmiyur", "tiruvanmiyur": "Thiruvanmiyur",
 }
 
 
@@ -112,15 +135,21 @@ class _RealEstateBrain:
 
         if lang == "en-IN":
             return (
-                f"Hi {{name}}, this is {agent} from {company}. You'd shown "
-                f"interest in property options — do you have a quick minute "
-                f"to find one that fits?"
+                f"Hi {{name}}, this is {agent} from {company}. "
+                f"You were looking at properties in {tenant.city}, right? "
+                f"Quick two minutes."
             )
         if lang == "hi-IN":
             return (
-                f"Haan {{name}} ji, namaste! Main {agent}, {company} se. "
-                f"Aapne property dekhne mein interest dikhaya tha — ek "
-                f"minute baat kar sakte hain?"
+                f"Namaste {{name}} ji, main {agent}, {company} se. "
+                f"Aap {tenant.city} mein property dekh rahe the na? "
+                f"Bas do minute."
+            )
+        if lang == "ta-IN":
+            return (
+                f"Vanakkam {{name}} sir, naan {agent}, {company} la irundhu. "
+                f"Neenga {tenant.city} la property paatheenga-la? "
+                f"Rendu minute podhum."
             )
         if lang == "mr-IN":
             return (
@@ -174,19 +203,86 @@ class _RealEstateBrain:
     def pain_overlay(self, lang: str) -> str:
         """Per-turn reinforcement appended after the base prompt.
 
-        Deep behavior lives in priya-real-estate.md (loaded as base_prompt).
-        This overlay is a *terse* reminder that survives long contexts and
-        catches the LLM when it drifts mid-call. Kept under ~12 lines so it
-        does not blow out the per-turn context budget.
+        Deep behavior + locality→WhatsApp→visit scripts live in
+        priya-real-estate.md. This overlay is the terse SURVIVAL kit
+        that catches the LLM when it drifts mid-call. Includes the
+        canonical WhatsApp-after-locality response in the active language
+        so the LLM can copy it verbatim.
         """
+        if lang == "en-IN":
+            locality_script = (
+                'WHEN LEAD NAMES A LOCALITY (e.g. "Adyar", "T. Nagar"), reply EXACTLY this shape:\n'
+                '  "Great sir — we have 2-3 fresh options in [locality]. Sending the listings '
+                'to this WhatsApp number right now. For the site visit, would Saturday morning '
+                'around 11 AM work, or is Sunday better?"\n'
+                'WHEN LEAD AGREES TO A SLOT, close with:\n'
+                '  "Done sir — Saturday 11 AM, [locality] site visit booked. Sending the '
+                'confirmation to this same WhatsApp number now with the broker uncle\'s contact '
+                'and exact address. See you Saturday!"\n'
+            )
+        elif lang == "ta-IN":
+            locality_script = (
+                'WHEN LEAD NAMES A LOCALITY (e.g. "Adyar", "T. Nagar"), reply EXACTLY this shape:\n'
+                '  "Sari sir, [locality] la namba kitta 2-3 fresh options irukku. Listings ippo '
+                'indha WhatsApp number ku anuppuren. Site visit ku Saturday kaalai 11 mani, illa '
+                'Sunday convenient-aa?"\n'
+                'WHEN LEAD AGREES TO A SLOT, close with:\n'
+                '  "Done sir, Saturday kaalai 11 mani, [locality] site visit confirm. Indha '
+                'WhatsApp number-ku ippo confirmation anuppuren — address-um broker uncle '
+                'contact-um. Saturday paarpom!"\n'
+            )
+        else:  # hi-IN
+            locality_script = (
+                'WHEN LEAD NAMES A LOCALITY (e.g. "Adyar", "T. Nagar"), reply EXACTLY this shape:\n'
+                '  "Achha sir, [locality] mein humare paas 2-3 fresh options hain. Listings '
+                'abhi iss WhatsApp number pe bhej rahi hoon. Site visit ke liye Saturday subah '
+                '11 baje, ya Sunday better hai?"\n'
+                'WHEN LEAD AGREES TO A SLOT, close with:\n'
+                '  "Done sir, Saturday subah 11 baje, [locality] site visit confirm. Iss hi '
+                'WhatsApp number pe abhi confirmation bhej rahi hoon — address aur broker uncle '
+                'ka contact bhi. Saturday ko milte hain!"\n'
+            )
         return (
             "<broker_focus>\n"
-            "GOAL: book a site visit. Not selling property. Not quoting price.\n"
-            "If lead names a slot (Saturday 4pm) — confirm + repeat back + end call.\n"
-            "If lead asks price — defer: 'Broker uncle site pe exact rate confirm karenge.'\n"
-            "If lead has named budget + locality + BHK — propose a slot NOW.\n"
-            "After 4 minutes without a slot — try ONE tentative slot, then end.\n"
-            "Never invent inventory. Never name competing platforms first.\n"
+            "GOAL: book a site visit + send WhatsApp confirmation. NOT selling. NOT quoting prices.\n"
+            "\n"
+            "ABSOLUTE RULES — VIOLATION = CALL FAIL:\n"
+            "1. NEVER state a number, price, rate, area, or amount the lead did NOT say first.\n"
+            "   Do NOT 'summarise back' an invented price ('so you want a 72.1 lakh flat'). NEVER.\n"
+            "   If you don't know the budget, ASK once — don't guess, don't infer.\n"
+            "2. NEVER invent specific inventory ('Building XYZ has a flat for you'). Talk in ranges only.\n"
+            "3. NEVER promise legal / loan / RERA / OC verification on call — broker confirms.\n"
+            "4. STAY in lead's language. If transcript has Devanagari → reply Hindi. Tamil script → "
+            "   reply Tamil. ASCII English → reply English. Flip ONLY on explicit triggers "
+            "   ('speak in english', 'hindi mein bolo', 'tamil-la pesunga').\n"
+            "5. MINIMUM QUESTIONS: extract intent + locality + BHK in <=3 turns, then close with the "
+            "   locality→WhatsApp→visit script below. Don't ask budget / timeline / loan / school "
+            "   UNLESS lead raises them.\n"
+            "6. Write the company + area names as plain normal words — the voice layer "
+            "handles pronunciation. NEVER insert dashes or single spaces between letters "
+            "('B-H-K', 'X Y Z') — the TTS literally says 'B dash H dash K'. 'BHK' stays 'BHK'.\n"
+            "7. HARD LIMIT: maximum TWO sentences per reply. Total reply <=20 words. "
+            "   Last sentence must be a question. Then STOP — wait for lead. NEVER fire 3-5 "
+            "   sentences in a row, NEVER list options unsolicited.\n"
+            "8. NEVER infer meaning from one-word lead replies ('Recorded' / 'Okay' / 'Yes' / 'Hmm'). "
+            "   Just ask the next short question: 'Sorry sir, buy ya rent?'\n"
+            "9. NEVER list localities for the lead ('we have T. Nagar, Adyar, Velachery...'). "
+            "   Just ask: 'Which area in Chennai?' Let THEM name one. Then mirror it back.\n"
+            "10. If lead names a locality you don't recognize, do NOT correct them. Just say "
+            "    'Got it sir, [repeat what they said]. We have a few options there...' and continue "
+            "    with the WhatsApp+visit close. Better to roll with it than confuse them.\n"
+            "11. Plain punctuation only — periods and commas. NO ellipsis '...' (TTS reads as glitch). "
+            "    NO em-dashes (TTS ignores them).\n"
+            "\n"
+            "SAY-IT-RIGHT — write each word in the spelling the voice reads correctly:\n"
+            "- Keep 'lakh' and 'crore' as-is ('eighty lakh', 'one point two crore'). "
+            "Write 'sqft' as 'square feet'. 'BHK' stays 'BHK', 'EMI' stays 'EMI', 'RERA' as 'Rera'.\n"
+            "- Chennai areas, write plainly as spoken: 'Tee Nagar' (NOT 'T. Nagar' / 'T-Nagar'), "
+            "Adyar, Mylapore, Velachery, Anna Nagar, Besant Nagar, Nungambakkam, Tambaram, "
+            "Porur, Guindy, Saidapet, OMR, ECR.\n"
+            "- One normal word per name. A dash or mid-word space is read aloud as 'dash' / a pause.\n"
+            "\n"
+            + locality_script +
             "</broker_focus>"
         )
 

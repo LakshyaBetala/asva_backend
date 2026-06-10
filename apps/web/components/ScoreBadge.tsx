@@ -2,10 +2,10 @@ import { Badge } from "@/components/ui/badge";
 
 const tone = (c: string) =>
   c === "hot"
-    ? "bg-red-600 text-white border-red-700"
+    ? "bg-hot text-white border-hot"
     : c === "warm"
-      ? "bg-orange-500 text-white border-orange-600"
-      : "bg-zinc-500 text-white border-zinc-600";
+      ? "bg-warm text-white border-warm"
+      : "bg-cold text-white border-cold";
 
 export function ScoreBadge({
   classification,

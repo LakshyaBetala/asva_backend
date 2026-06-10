@@ -169,9 +169,9 @@ _SEED: dict[str, TenantConfig] = {
     ),
     "demo-broker-tenant": TenantConfig(
         tenant_id="demo-broker-tenant",
-        company_name="Almmatix Realty Demo",
+        company_name="XYZ Broker",
         agent_name="Priya",
-        city="Mumbai",
+        city="Chennai",
         default_lang="hi-IN",
         voice_id_en="emily",
         voice_id_hi="anushka",
@@ -182,67 +182,40 @@ _SEED: dict[str, TenantConfig] = {
         # TTS already pronounces well; the engine substitutes on render.
         # Keep these *short* — long substitutions break the prosody.
         pronunciation_pack={
-            # Common terms
-            "BHK": "B-H-K",
+            # MINIMAL pack — Indian TTS engines handle Adyar/Velachery/
+            # Mylapore/T.Nagar/Bandra/Powai/BHK NATIVELY. The only override
+            # we keep is XYZ → phonetic, because TTS cannot guess "ksyz" vs
+            # "ex-why-zee". Everything else is left to native TTS handling.
+            #
+            # History of broken overrides (do NOT re-add):
+            #   "BHK": "B-H-K"           → call 24ae751d: "bee dash aitch dash kay"
+            #   "BHK": "bee aitch kay"   → call 42282a3b: user heard "BHKI"
+            #   "Adyar": "Ad-yar"        → call 27e1a582: "ad dash yar"
+            #   "XYZ": "X Y Z"           → call 24ae751d: garbled
+            "XYZ Broker": "Eks Why Zee Broker",
+            "XYZ": "Eks Why Zee",
             "sqft": "square feet",
-            "Cr": "crore",
-            "L": "lakh",
-            "EMI": "E-M-I",
-            "OC": "O-C",
             "RERA": "Rera",
-            # Mumbai
-            "Bandra": "Baandra",
-            "Powai": "Pow-eye",
-            "Andheri": "And-heri",
-            "Juhu": "Joo-hoo",
-            "Vikhroli": "Vik-roli",
-            "Ghatkopar": "Ghat-ko-par",
-            "Worli": "Vorli",
-            "Chembur": "Chem-bur",
-            "Goregaon": "Gore-gaon",
-            "Mulund": "Mu-lund",
-            "Kandivali": "Kandi-vali",
-            "Borivali": "Bori-vali",
-            # Pune
-            "Koregaon": "Kore-gaon",
-            "Hinjewadi": "Hin-jay-vaadi",
-            "Wakad": "Wa-kad",
-            "Magarpatta": "Magar-patta",
-            "Kharadi": "Kha-raadi",
-            "Kothrud": "Koth-rud",
-            # Bangalore
-            "Whitefield": "White-field",
-            "Koramangala": "Kora-mangala",
-            "Indiranagar": "Indira-nagar",
-            "Banashankari": "Bana-shankari",
-            "Jayanagar": "Jaya-nagar",
-            "Bellandur": "Bel-landur",
-            "Sarjapur": "Sar-japur",
-            "Yelahanka": "Yela-hanka",
-            # Hyderabad
-            "Banjara": "Banjaaraa",
-            "Jubilee": "Joo-bilee",
-            "Madhapur": "Madha-pur",
-            "Kondapur": "Konda-pur",
-            "Gachibowli": "Gachi-bowli",
-            "Kukatpally": "Kukat-pally",
-            "Hitech": "High-tech",
-            "Hyderabad": "Hai-derabad",
-            "Secunderabad": "Secunder-abad",
         },
     ),
 }
 
 
 def get_tenant(tenant_id: str) -> TenantConfig:
-    """Resolve a tenant by id. Raises TenantNotFound for unknown ids.
+    """Resolve a tenant by id.
 
-    Phase 1: reads from the in-process seed dict above.
-    Phase 2: will hit Supabase `tenants` table with a 60s in-process cache.
+    DEMO-DAY OVERRIDE (2026-06-08): force every call to use the broker
+    tenant, regardless of incoming tenant_id. Restores real_estate brain
+    + property-flavoured prompts for the recording session. Revert after
+    demos are captured.
     """
-    cfg = _SEED.get(tenant_id)
-    if cfg is None:
-        raise TenantNotFound(f"tenant_id={tenant_id!r} not in registry")
+    cfg = _SEED["demo-broker-tenant"]
+    print(
+        f"[get_tenant OVERRIDE] requested={tenant_id!r} -> "
+        f"returning company={cfg.company_name!r} city={cfg.city!r} "
+        f"industry={cfg.industry_key!r}",
+        flush=True,
+    )
     return cfg
 
 

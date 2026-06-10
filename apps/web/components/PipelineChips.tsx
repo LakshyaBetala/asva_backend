@@ -7,29 +7,29 @@ export type ChipCounts = Record<Classification, number>;
 
 const tone: Record<Classification, { active: string; idle: string; dot: string }> = {
   all: {
-    active: "bg-slate-900 text-white border-slate-900",
-    idle: "border-slate-300 text-slate-700 hover:bg-slate-50",
-    dot: "bg-slate-500",
+    active: "bg-foreground text-background border-foreground",
+    idle: "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+    dot: "bg-muted-foreground",
   },
   hot: {
-    active: "bg-red-600 text-white border-red-700",
-    idle: "border-red-200 text-red-700 hover:bg-red-50",
-    dot: "bg-red-500",
+    active: "bg-hot text-white border-hot",
+    idle: "border-hot/30 text-hot hover:bg-hot/5",
+    dot: "bg-hot",
   },
   warm: {
-    active: "bg-orange-500 text-white border-orange-600",
-    idle: "border-orange-200 text-orange-700 hover:bg-orange-50",
-    dot: "bg-orange-500",
+    active: "bg-warm text-white border-warm",
+    idle: "border-warm/30 text-warm hover:bg-warm/5",
+    dot: "bg-warm",
   },
   cold: {
-    active: "bg-blue-600 text-white border-blue-700",
-    idle: "border-blue-200 text-blue-700 hover:bg-blue-50",
-    dot: "bg-blue-500",
+    active: "bg-cold text-white border-cold",
+    idle: "border-cold/30 text-cold hover:bg-cold/5",
+    dot: "bg-cold",
   },
   unscored: {
-    active: "bg-zinc-700 text-white border-zinc-800",
-    idle: "border-zinc-200 text-zinc-600 hover:bg-zinc-50",
-    dot: "bg-zinc-400",
+    active: "bg-muted-foreground text-white border-muted-foreground",
+    idle: "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+    dot: "bg-muted-foreground",
   },
 };
 
@@ -62,7 +62,7 @@ export function PipelineChips({
             type="button"
             onClick={() => onChange(c)}
             className={cn(
-              "inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors",
+              "inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors active:scale-[0.97]",
               isActive ? styles.active : styles.idle,
             )}
             aria-pressed={isActive}
@@ -72,7 +72,7 @@ export function PipelineChips({
             <span
               className={cn(
                 "ml-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
-                isActive ? "bg-white/20" : "bg-slate-100 text-slate-700",
+                isActive ? "bg-white/20" : "bg-muted text-muted-foreground",
               )}
             >
               {counts[c]}

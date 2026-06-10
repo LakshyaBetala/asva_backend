@@ -33,37 +33,37 @@ const COLS: {
     key: "hot",
     title: "Hot",
     sub: "Call back today",
-    bg: "bg-red-50",
-    border: "border-red-200",
-    dot: "bg-red-500",
-    badge: "bg-red-100 text-red-800 border-red-200",
+    bg: "bg-hot/5",
+    border: "border-hot/20",
+    dot: "bg-hot",
+    badge: "bg-hot/10 text-hot border-hot/20",
   },
   {
     key: "warm",
     title: "Warm",
     sub: "Follow up in 3 days",
-    bg: "bg-orange-50",
-    border: "border-orange-200",
-    dot: "bg-orange-500",
-    badge: "bg-orange-100 text-orange-800 border-orange-200",
+    bg: "bg-warm/5",
+    border: "border-warm/20",
+    dot: "bg-warm",
+    badge: "bg-warm/10 text-warm border-warm/20",
   },
   {
     key: "cold",
     title: "Cold",
     sub: "Monthly nurture",
-    bg: "bg-blue-50",
-    border: "border-blue-200",
-    dot: "bg-blue-500",
-    badge: "bg-blue-100 text-blue-800 border-blue-200",
+    bg: "bg-cold/5",
+    border: "border-cold/20",
+    dot: "bg-cold",
+    badge: "bg-cold/10 text-cold border-cold/20",
   },
   {
     key: "dead",
     title: "Dead",
     sub: "Do-not-call",
-    bg: "bg-zinc-50",
-    border: "border-zinc-200",
-    dot: "bg-zinc-400",
-    badge: "bg-zinc-100 text-zinc-700 border-zinc-200",
+    bg: "bg-muted/40",
+    border: "border-border",
+    dot: "bg-muted-foreground",
+    badge: "bg-muted text-muted-foreground border-border",
   },
 ];
 
@@ -78,13 +78,18 @@ function relativeTime(iso: string): string {
 }
 
 const NEXT_ACTION_COPY: Record<string, string> = {
+  // Broker actions
+  book_site_visit: "Confirm site visit",
   human_callback_today: "Callback today",
-  send_quote: "Send quote",
-  send_proforma: "Send proforma",
-  send_sample: "Send sample",
+  send_listings: "Share listings",
+  send_brochure: "Send brochure",
   followup_3d: "Follow up in 3d",
   followup_30d: "Follow up in 30d",
   dnc: "Mark DNC",
+  // Legacy keys (old rows)
+  send_quote: "Share listings",
+  send_proforma: "Send confirmation",
+  send_sample: "Send brochure",
 };
 
 export function PipelineBoard({ leads }: { leads: PipelineLead[] }) {
@@ -175,18 +180,18 @@ export function PipelineBoard({ leads }: { leads: PipelineLead[] }) {
                 <div className="flex items-center gap-2">
                   <span className={cn("h-2.5 w-2.5 rounded-full", col.dot)} />
                   <div>
-                    <div className="text-sm font-semibold text-slate-900">{col.title}</div>
-                    <div className="text-[11px] text-slate-500">{col.sub}</div>
+                    <div className="text-sm font-semibold text-foreground">{col.title}</div>
+                    <div className="text-[11px] text-muted-foreground">{col.sub}</div>
                   </div>
                 </div>
-                <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-700 shadow-sm">
+                <span className="rounded-full bg-card px-2 py-0.5 text-xs font-semibold tabular-nums text-foreground shadow-sm">
                   {rows.length}
                 </span>
               </div>
 
               <div className="flex-1 space-y-2 overflow-y-auto p-3">
                 {rows.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-black/10 bg-white/40 p-4 text-center text-xs text-slate-500">
+                  <div className="rounded-md border border-dashed border-border bg-background/40 p-4 text-center text-xs text-muted-foreground">
                     Drop a lead here to mark {col.title.toLowerCase()}.
                   </div>
                 ) : (
@@ -199,7 +204,7 @@ export function PipelineBoard({ leads }: { leads: PipelineLead[] }) {
                         e.dataTransfer.effectAllowed = "move";
                       }}
                       className={cn(
-                        "group cursor-grab rounded-lg border bg-white p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing",
+                        "group cursor-grab rounded-lg border bg-card p-3 shadow-sm transition hover:shadow-md active:cursor-grabbing",
                         col.border,
                         pendingId === lead.id && "opacity-60",
                       )}
@@ -207,7 +212,7 @@ export function PipelineBoard({ leads }: { leads: PipelineLead[] }) {
                       <div className="flex items-start justify-between gap-2">
                         <Link
                           href={`/leads/${lead.id}`}
-                          className="font-medium text-slate-900 hover:underline"
+                          className="font-medium text-foreground transition-colors hover:text-brand"
                         >
                           {lead.name}
                         </Link>
@@ -223,22 +228,22 @@ export function PipelineBoard({ leads }: { leads: PipelineLead[] }) {
                         ) : null}
                       </div>
                       {lead.company ? (
-                        <div className="mt-0.5 text-xs text-slate-600">{lead.company}</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">{lead.company}</div>
                       ) : null}
-                      <div className="mt-1 font-mono text-[11px] text-slate-500">
+                      <div className="mt-1 font-mono text-[11px] text-muted-foreground">
                         {lead.phone_e164}
                       </div>
                       {lead.reason ? (
-                        <div className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-slate-600">
+                        <div className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
                           {lead.reason}
                         </div>
                       ) : null}
-                      <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2">
-                        <span className="text-[10px] text-slate-400">
+                      <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+                        <span className="text-[10px] text-muted-foreground">
                           {relativeTime(lead.updated_at)}
                         </span>
                         {lead.next_action ? (
-                          <span className="text-[10px] font-medium text-slate-600">
+                          <span className="text-[10px] font-medium text-foreground/70">
                             {NEXT_ACTION_COPY[lead.next_action] ?? lead.next_action}
                           </span>
                         ) : null}

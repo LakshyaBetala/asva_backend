@@ -152,33 +152,36 @@ class QualificationSlots:
 
 # Prompt the LLM responds to. Structured-output via JSON-schema hint.
 EXTRACTION_PROMPT = """\
-You are extracting structured lead qualification data from a live sales call transcript.
+You are extracting structured lead qualification data from a live real-estate
+site-visit call transcript. The lead is a property buyer/renter; the agent
+(Priya) is a broker booking a site visit.
 Output ONLY valid JSON matching the schema below. No prose, no markdown fences.
 
 Fields you must output (use null for not-yet-known):
 
 {
-  "product_interest": string|null,        // chemical or category they buy/want
-  "volume_monthly_kg": integer|null,      // estimated monthly volume in kg
-  "buying_frequency": "one_off"|"monthly"|"ad_hoc"|"unknown",
-  "current_supplier": string|null,        // who they buy from today
-  "pain_point": string|null,              // what's wrong with current setup
-  "decision_role": "owner"|"procurement"|"engineer"|"assistant"|"unknown",
-  "timeline_days": integer|null,          // when they want to buy (days)
-  "buying_confidence": number,            // 0..1, inferred from tone + commit words
+  "product_interest": string|null,        // what they want: BHK + locality + buy/rent, e.g. "2 BHK Adyar, buy"
+  "volume_monthly_kg": integer|null,      // NOT USED for real estate — always null
+  "buying_frequency": "one_off"|"monthly"|"ad_hoc"|"unknown",  // real estate is "one_off"
+  "current_supplier": string|null,        // other broker they're already working with, if any
+  "pain_point": string|null,              // their key requirement / must-have (ready-to-move, parking, school nearby, budget cap)
+  "decision_role": "owner"|"procurement"|"engineer"|"assistant"|"unknown",  // "owner"=decides themselves, "assistant"=needs family's ok, else "unknown"
+  "timeline_days": integer|null,          // when they want possession / to move in (days)
+  "buying_confidence": number,            // 0..1, how close they are to booking a site visit
   "slot_confidence": {                    // 0..1 per slot you populated
     "product_interest": number,
-    "volume_monthly_kg": number,
+    "timeline_days": number,
     ...
   }
 }
 
 Rules:
 1. If a slot value is the same as before, set its slot_confidence equal to or higher than before.
-2. Buying_confidence 0.9+ requires explicit buying signals: "send me a quote", "yes I want to buy".
-3. Buying_confidence 0.0-0.3 = polite refusal, "not interested", "we'll think about it".
-4. Buying_confidence 0.4-0.6 = engaged but non-committal.
+2. Buying_confidence 0.9+ requires a clear commitment: agreed to a site visit, "haan dikhaiye", "send me the address".
+3. Buying_confidence 0.0-0.3 = polite refusal, "just browsing", "we'll think about it".
+4. Buying_confidence 0.4-0.6 = engaged but non-committal (shared locality/BHK but no visit agreed yet).
 5. Never make up a value you're <0.4 confident in. Use null.
+6. NEVER invent a budget, price, area, or BHK the lead did not actually say.
 
 Prior extracted slots (merge intelligently — only update slots you're more confident about now):
 {PRIOR_SLOTS_JSON}

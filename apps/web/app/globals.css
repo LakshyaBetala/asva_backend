@@ -2,4 +2,114 @@
 @tailwind components;
 @tailwind utilities;
 
-body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+/* ============================================================================
+   Almmatix Voice — design tokens
+   Warm-premium light theme. Single confident "live-call" emerald brand accent;
+   semantic hot/warm/cold ramp for lead scoring (the CRM's signature signal).
+   All component classes (bg-background, text-muted-foreground, border-input…)
+   resolve through these vars, so the whole app re-skins from here.
+   ========================================================================= */
+:root {
+  --background: 40 33% 98%;        /* warm ivory paper */
+  --foreground: 28 14% 13%;        /* warm near-black ink */
+
+  --card: 0 0% 100%;
+  --card-foreground: 28 14% 13%;
+
+  --muted: 38 24% 94%;
+  --muted-foreground: 30 8% 42%;
+
+  --border: 34 22% 89%;
+  --input: 34 20% 85%;
+  --ring: 161 84% 30%;
+
+  --primary: 28 16% 13%;           /* ink — primary buttons stay confident/dark */
+  --primary-foreground: 40 33% 98%;
+
+  --accent: 160 38% 94%;           /* soft brand tint for hovers/selected */
+  --accent-foreground: 162 84% 20%;
+
+  --brand: 161 84% 28%;            /* live-call emerald — Almmatix signal */
+  --brand-foreground: 150 40% 98%;
+
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 40 33% 98%;
+
+  /* Lead-score semantics */
+  --hot: 352 78% 53%;              /* rose — close now */
+  --warm: 33 92% 50%;              /* amber — nurture */
+  --cold: 215 14% 52%;             /* slate — park */
+
+  --radius: 0.625rem;
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Faint warm depth behind the whole app — atmosphere without distraction. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(55rem 38rem at 88% -12%, hsl(161 60% 90% / 0.55), transparent 60%),
+      radial-gradient(48rem 30rem at -12% -8%, hsl(38 70% 88% / 0.45), transparent 55%);
+  }
+}
+
+/* Utilities the components can opt into. */
+.font-display {
+  font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Row entrance — staggered via inline animation-delay on each row.
+   Transform+opacity only; collapses to nothing under reduced motion. */
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-row-in {
+  animation: row-in 0.36s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+/* Score-bar fill sweeps in from zero on mount. */
+@keyframes bar-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.animate-bar-fill {
+  transform-origin: left center;
+  animation: bar-fill 0.7s cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation-delay: 0.15s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-row-in,
+  .animate-bar-fill {
+    animation: none;
+  }
+}

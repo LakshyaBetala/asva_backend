@@ -15,11 +15,11 @@ function statusLabel(used: number, allowance: number, wigglePct: number): {
   const pct = (used / allowance) * 100;
   const wiggleCeiling = allowance * (1 + wigglePct / 100);
 
-  if (used >= wiggleCeiling) return { colour: "text-red-700", label: "Overage" };
-  if (used >= allowance) return { colour: "text-blue-600", label: "Bonus" };
-  if (pct >= 90) return { colour: "text-amber-700", label: "90%+" };
-  if (pct >= 80) return { colour: "text-amber-600", label: "80%+" };
-  return { colour: "text-emerald-700", label: "OK" };
+  if (used >= wiggleCeiling) return { colour: "text-hot", label: "Overage" };
+  if (used >= allowance) return { colour: "text-cold", label: "Bonus" };
+  if (pct >= 90) return { colour: "text-warm", label: "90%+" };
+  if (pct >= 80) return { colour: "text-warm", label: "80%+" };
+  return { colour: "text-brand", label: "OK" };
 }
 
 export function UnitsRemainingWidget({
@@ -40,7 +40,7 @@ export function UnitsRemainingWidget({
       </div>
       <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
         <div
-          className={pct >= 100 ? "h-full bg-red-500" : pct >= 80 ? "h-full bg-amber-500" : "h-full bg-emerald-500"}
+          className={pct >= 100 ? "h-full bg-hot" : pct >= 80 ? "h-full bg-warm" : "h-full bg-brand"}
           style={{ width: `${pct}%` }}
         />
       </div>

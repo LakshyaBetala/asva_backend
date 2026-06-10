@@ -79,18 +79,30 @@ export function TranscriptView({ leadId }: { leadId: string }) {
     return <p className="text-sm text-muted-foreground">Connecting…</p>;
   }
   return (
-    <div className="max-h-96 space-y-3 overflow-y-auto">
-      {lines.map((l) => (
-        <div
-          key={l.id}
-          className={l.speaker === "agent" ? "" : "pl-8"}
-        >
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {l.speaker === "agent" ? "Priya" : "Lead"} · {l.lang}
-          </span>
-          <p className="text-sm">{l.text}</p>
-        </div>
-      ))}
+    <div className="max-h-96 space-y-3 overflow-y-auto pr-1">
+      {lines.map((l) => {
+        const isAgent = l.speaker === "agent";
+        return (
+          <div key={l.id} className={isAgent ? "max-w-[85%]" : "ml-auto max-w-[85%] text-right"}>
+            <span
+              className={
+                "text-[11px] font-medium uppercase tracking-wide " +
+                (isAgent ? "text-brand" : "text-muted-foreground")
+              }
+            >
+              {isAgent ? "Priya" : "Lead"} · {l.lang}
+            </span>
+            <p
+              className={
+                "mt-1 inline-block rounded-lg px-3 py-2 text-left text-sm leading-relaxed " +
+                (isAgent ? "bg-muted text-foreground" : "bg-brand/10 text-foreground")
+              }
+            >
+              {l.text}
+            </p>
+          </div>
+        );
+      })}
     </div>
   );
 }

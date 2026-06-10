@@ -1,15 +1,15 @@
 import { cn } from "@/lib/utils";
 
 const fill: Record<string, string> = {
-  hot: "bg-red-500",
-  warm: "bg-orange-500",
-  cold: "bg-blue-500",
+  hot: "bg-hot",
+  warm: "bg-warm",
+  cold: "bg-cold",
 };
 
 const text: Record<string, string> = {
-  hot: "text-red-700",
-  warm: "text-orange-700",
-  cold: "text-blue-700",
+  hot: "text-hot",
+  warm: "text-warm",
+  cold: "text-cold",
 };
 
 export function ScoreBar({
@@ -26,16 +26,19 @@ export function ScoreBar({
         <span
           className={cn(
             "font-semibold uppercase tracking-wide",
-            text[classification] ?? "text-zinc-700",
+            text[classification] ?? "text-muted-foreground",
           )}
         >
           {classification}
         </span>
         <span className="tabular-nums text-muted-foreground">{score}</span>
       </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
         <div
-          className={cn("h-full rounded-full", fill[classification] ?? "bg-zinc-400")}
+          className={cn(
+            "animate-bar-fill h-full rounded-full transition-all duration-500",
+            fill[classification] ?? "bg-muted-foreground",
+          )}
           style={{ width: `${pct}%` }}
         />
       </div>

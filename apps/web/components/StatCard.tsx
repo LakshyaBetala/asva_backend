@@ -4,28 +4,28 @@ type Tone = "neutral" | "hot" | "good" | "info";
 
 const toneStyles: Record<Tone, { ring: string; value: string; label: string; bg: string }> = {
   neutral: {
-    ring: "ring-slate-200",
-    value: "text-slate-900",
-    label: "text-slate-500",
-    bg: "bg-white",
+    ring: "ring-border",
+    value: "text-foreground",
+    label: "text-muted-foreground",
+    bg: "bg-card",
   },
   hot: {
-    ring: "ring-red-200",
-    value: "text-red-700",
-    label: "text-red-500",
-    bg: "bg-gradient-to-br from-red-50 to-white",
+    ring: "ring-hot/20",
+    value: "text-hot",
+    label: "text-hot/70",
+    bg: "bg-gradient-to-br from-hot/5 to-card",
   },
   good: {
-    ring: "ring-emerald-200",
-    value: "text-emerald-700",
-    label: "text-emerald-600",
-    bg: "bg-gradient-to-br from-emerald-50 to-white",
+    ring: "ring-brand/20",
+    value: "text-brand",
+    label: "text-brand/70",
+    bg: "bg-gradient-to-br from-brand/5 to-card",
   },
   info: {
-    ring: "ring-blue-200",
-    value: "text-blue-700",
-    label: "text-blue-600",
-    bg: "bg-gradient-to-br from-blue-50 to-white",
+    ring: "ring-cold/20",
+    value: "text-cold",
+    label: "text-cold/70",
+    bg: "bg-gradient-to-br from-cold/5 to-card",
   },
 };
 
@@ -52,7 +52,7 @@ export function StatCard({
       <div className={cn("text-xs font-medium uppercase tracking-wide", s.label)}>
         {label}
       </div>
-      <div className={cn("text-3xl font-semibold tabular-nums", s.value)}>
+      <div className={cn("font-display text-3xl font-semibold tabular-nums", s.value)}>
         {value}
       </div>
       {hint ? (

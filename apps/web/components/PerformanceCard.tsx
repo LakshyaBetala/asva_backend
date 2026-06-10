@@ -43,15 +43,15 @@ export function PerformanceCard({
       <h2 className="text-sm font-medium">Performance this month</h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Units used" value={`${unitsUsed.toLocaleString()} / ${unitsAllowance.toLocaleString()}`} />
-        <Stat label="Hot leads" value={hotCount} accent="text-red-600" />
-        <Stat label="Warm leads" value={warmCount} accent="text-orange-500" />
+        <Stat label="Hot leads" value={hotCount} accent="text-hot" />
+        <Stat label="Warm leads" value={warmCount} accent="text-warm" />
         <Stat label="Cost so far" value={fmtInr(costInr)} />
       </div>
 
       <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-2">
         <p>
           <strong>Pipeline opened:</strong> {fmtInr(pipelineValue)} potential
-          (at your avg order of {fmtInr(avgOrderSizeInr)} × {hotCount} hot leads).
+          (at your average deal value of {fmtInr(avgOrderSizeInr)} × {hotCount} hot leads).
         </p>
         <p>
           <strong>Break-even:</strong> Just {paybackHotLeads} closed Hot lead{paybackHotLeads === 1 ? "" : "s"} this

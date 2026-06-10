@@ -640,7 +640,11 @@ async def run_local(args: argparse.Namespace) -> None:
         )
         print(f"  PRIYA (intro): Synthesizing...")
         try:
-            intro_audio = await deps.tts.synth(intro_text, args.lang)
+            from .streaming_orchestrator import prepare_intro_for_tts
+            intro_spoken = prepare_intro_for_tts(
+                intro_text, args.lang, tenant_cfg.pronunciation_pack
+            )
+            intro_audio = await deps.tts.synth(intro_spoken, args.lang)
             print(f"  PRIYA: {intro_text}")
             try:
                 intro_pcm, intro_sr = wav_bytes_to_pcm(intro_audio)

@@ -1,43 +1,49 @@
 import { cn } from "@/lib/utils";
+import { ArrowRight } from "lucide-react";
 
 const TONE: Record<
   string,
   { ring: string; text: string; chip: string; sub: string }
 > = {
   hot: {
-    ring: "stroke-red-500",
-    text: "text-red-600",
-    chip: "bg-red-50 text-red-700 border-red-200",
+    ring: "stroke-hot",
+    text: "text-hot",
+    chip: "bg-hot/10 text-hot border-hot/20",
     sub: "Call back today",
   },
   warm: {
-    ring: "stroke-orange-500",
-    text: "text-orange-600",
-    chip: "bg-orange-50 text-orange-700 border-orange-200",
+    ring: "stroke-warm",
+    text: "text-warm",
+    chip: "bg-warm/10 text-warm border-warm/20",
     sub: "Follow up in 3 days",
   },
   cold: {
-    ring: "stroke-blue-500",
-    text: "text-blue-600",
-    chip: "bg-blue-50 text-blue-700 border-blue-200",
+    ring: "stroke-cold",
+    text: "text-cold",
+    chip: "bg-cold/10 text-cold border-cold/20",
     sub: "Monthly nurture",
   },
   dead: {
-    ring: "stroke-zinc-400",
-    text: "text-zinc-600",
-    chip: "bg-zinc-50 text-zinc-700 border-zinc-200",
+    ring: "stroke-muted-foreground",
+    text: "text-muted-foreground",
+    chip: "bg-muted text-muted-foreground border-border",
     sub: "Do-not-call",
   },
 };
 
 const ACTION_COPY: Record<string, string> = {
+  // Broker actions
+  book_site_visit: "Confirm the site visit",
   human_callback_today: "Call back today",
-  send_quote: "Send a quote",
-  send_proforma: "Send proforma invoice",
-  send_sample: "Send a sample",
+  send_listings: "Share matching listings",
+  send_brochure: "Send brochure / details",
   followup_3d: "Schedule follow-up in 3 days",
   followup_30d: "Schedule follow-up in 30 days",
   dnc: "Mark do-not-call",
+  // Legacy keys (old rows) → broker meaning
+  send_quote: "Share matching listings",
+  send_proforma: "Send site-visit confirmation",
+  send_sample: "Send brochure / details",
 };
 
 export function ScoreHero({
@@ -65,7 +71,7 @@ export function ScoreHero({
             cy="50"
             r={r}
             fill="none"
-            className="stroke-slate-100"
+            className="stroke-muted"
             strokeWidth="10"
           />
           <circle
@@ -81,8 +87,8 @@ export function ScoreHero({
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className={cn("text-2xl font-bold tabular-nums", tone.text)}>{score}</div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-500">/ 100</div>
+          <div className={cn("font-display text-2xl font-bold tabular-nums", tone.text)}>{score}</div>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">/ 100</div>
         </div>
       </div>
 
@@ -99,10 +105,10 @@ export function ScoreHero({
           </span>
           <span className="text-xs text-muted-foreground">{tone.sub}</span>
         </div>
-        <p className="text-sm leading-relaxed text-slate-700">{reason}</p>
+        <p className="text-sm leading-relaxed text-foreground/80">{reason}</p>
         {nextAction ? (
-          <div className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700">
-            <span>▶</span>
+          <div className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs font-medium text-foreground">
+            <ArrowRight className="h-3.5 w-3.5 text-brand" />
             <span>{ACTION_COPY[nextAction] ?? nextAction}</span>
           </div>
         ) : null}

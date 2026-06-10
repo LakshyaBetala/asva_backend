@@ -89,7 +89,7 @@ export function StartAiCallButton({
                     "flex flex-col items-center gap-1 rounded-lg border p-3 text-left transition",
                     lang === l.code
                       ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                      : "border-slate-200 hover:border-slate-300 hover:bg-slate-50",
+                      : "border-border hover:border-input hover:bg-muted/50",
                   )}
                 >
                   <span className="text-base leading-none">{l.flag}</span>
@@ -114,7 +114,7 @@ export function StartAiCallButton({
                     "flex items-start gap-3 rounded-lg border p-3 text-left transition",
                     gender === v.code
                       ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                      : "border-slate-200 hover:border-slate-300 hover:bg-slate-50",
+                      : "border-border hover:border-input hover:bg-muted/50",
                   )}
                 >
                   <span className="text-xl leading-none">{v.emoji}</span>

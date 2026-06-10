@@ -58,10 +58,11 @@ export default async function LeadDetail({
       <main className="mx-auto max-w-4xl space-y-6 p-6">
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">{lead.name}</h1>
-            <p className="text-sm text-muted-foreground">
-              {lead.phone_e164} · {lead.company ?? "—"} ·{" "}
-              {lead.industry ?? "—"}
+            <h1 className="font-display text-3xl font-semibold tracking-tight">{lead.name}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              <span className="font-mono tabular">{lead.phone_e164}</span>
+              {lead.company ? <> · {lead.company}</> : null}
+              {lead.industry ? <> · {lead.industry}</> : null}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -76,9 +77,9 @@ export default async function LeadDetail({
           </div>
         </header>
 
-        <section className="space-y-4 rounded-xl border bg-white p-6 shadow-sm">
+        <section className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
           <div className="flex items-baseline justify-between">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               AI verdict
             </h2>
             {latestScore?.scored_at ? (
@@ -96,11 +97,11 @@ export default async function LeadDetail({
                 nextAction={latestScore.next_action}
               />
               {latestScore.summary ? (
-                <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-4">
+                <div className="rounded-lg border border-border bg-muted/40 p-4">
                   <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Call summary
                   </div>
-                  <p className="text-sm leading-relaxed text-slate-700">
+                  <p className="text-sm leading-relaxed text-foreground/80">
                     {latestScore.summary}
                   </p>
                 </div>
@@ -110,8 +111,8 @@ export default async function LeadDetail({
               </div>
             </>
           ) : (
-            <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center">
-              <p className="text-sm font-medium text-slate-700">No call yet</p>
+            <div className="rounded-lg border border-dashed border-border bg-muted/40 p-6 text-center">
+              <p className="text-sm font-medium text-foreground">No call yet</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 Click <strong>Call with AI</strong> to dial Priya. The verdict
                 appears here ~30 seconds after the call ends.
@@ -120,13 +121,17 @@ export default async function LeadDetail({
           )}
         </section>
 
-        <section className="rounded-md border p-4">
-          <h2 className="mb-4 text-sm font-medium">Live qualification</h2>
+        <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+          <h2 className="mb-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Live qualification
+          </h2>
           <QualificationPanel slots={(latestSlots as any) ?? null} />
         </section>
 
-        <section className="rounded-md border p-4">
-          <h2 className="mb-2 text-sm font-medium">Transcript</h2>
+        <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+          <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Transcript
+          </h2>
           <TranscriptView leadId={lead.id} />
         </section>
       </main>

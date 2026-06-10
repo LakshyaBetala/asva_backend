@@ -146,9 +146,17 @@ _TRIGGER_PHRASES: dict[Lang, tuple[str, ...]] = {
     ),
     Lang.TA: (
         "tamil-la pesunga",
+        "tamil le pesla",
+        "tamil la pesla",
         "tamil mein bolo",
+        "tamil mein baat karo",
         "speak in tamil",
+        "switch to tamil",
+        "can we speak in tamil",
         "tamizh-la pesunga",
+        "tamizh le pesla",
+        "tamil pesalama",
+        "tamizh pesalama",
     ),
 }
 
