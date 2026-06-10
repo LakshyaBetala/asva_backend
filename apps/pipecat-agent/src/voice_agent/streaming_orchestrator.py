@@ -937,8 +937,28 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
     # After several lead turns, nudge toward the slot — but only if the
     # conversation has actually produced a requirement to book against.
     nudge_close = turn >= 4 and intent in ("normal", "backchannel")
+    # Lead is calling out repetition / time-waste. Call 3ec7c49d melted down
+    # because Priya answered each complaint with ANOTHER apology + restatement.
+    _FRUSTRATION_KEYWORDS = (
+        "repeat kyu", "kyu repeat", "repeat kyon", "kyon repeat", "baar baar",
+        "time waste", "टाइम वेस्ट", "रिपीट", "wahi cheez", "dimag", "दिमाग",
+        "bore", "irritate", "pareshaan kar", "same thing again",
+        "repeating the same", "rakh raha", "rakh deta", "रख दो", "रख रहा",
+        "phone vai", "vei da", "madhupadi", "thirupi thirupi",
+    )
+    lead_frustrated = any(k in lead_lc or k in (lead_text or "") for k in _FRUSTRATION_KEYWORDS)
 
-    parts = ['[ROMAN SCRIPT ONLY. No Devanagari. No Tamil script.]']
+    parts = [
+        '[ROMAN SCRIPT ONLY. No Devanagari. No Tamil script.]',
+        # Anti-parrot — the #1 complaint from live calls. "Acknowledge" means
+        # 2-4 words, NEVER a restatement of what the lead just told you.
+        '[NEVER restate or summarise the lead\'s words back to them '
+        '("aap rent pe dekh rahe hain...", "aapko lagta hai ki..."). They '
+        'KNOW what they said. Ack in 2-4 words max ("Achha sir" / "Sari sir" '
+        '/ "Got it"), then ANSWER their question or ask the next NEW thing. '
+        'Every reply must END with a question or a concrete next step — '
+        'never with an observation.]',
+    ]
 
     if turn == 0:
         parts.append('[Intro DONE. Do not introduce yourself.]')
@@ -974,13 +994,13 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
             parts.append(f'[Your last reply (English): "{last_priya}"]')
     else:
         parts.append(
-            '[HINDI. Reply in Hindi (romanized OK, e.g. "Bilkul sir, '
-            'budget kya hai?"). ZERO English sentences. Only use English '
-            'for property nouns (BHK, sqft, lakh, crore, area names). '
-            'NEVER reply "Got it, sir" or "Sure, so you want..." — those '
-            'are English sentences. Reply structure: ack in Hindi → one '
-            'short Hindi question. No Tamil grammar (no "irukku", "tharen", '
-            '"panren").]'
+            '[HINDI in ROMAN LETTERS ONLY — "Bilkul sir, budget kya hai?" '
+            'NEVER Devanagari script (the voice layer cannot pace it). '
+            'ZERO English sentences. Only use English for property nouns '
+            '(BHK, sqft, lakh, crore, area names). NEVER reply "Got it, '
+            'sir" or "Sure, so you want..." — those are English sentences. '
+            'Reply structure: 2-4 word Hindi ack → one short Hindi '
+            'question. No Tamil grammar (no "irukku", "tharen", "panren").]'
         )
         if last_priya:
             parts.append(f'[Your last reply (Hindi): "{last_priya}"]')
@@ -998,6 +1018,22 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         return "\n".join(parts)
 
     parts.append(f'Lead: "{lead_text}"')
+
+    # Frustrated lead beats everything except silence/garble: stop the
+    # apology-restatement loop and deliver value in ONE line, or wrap up.
+    if lead_frustrated:
+        parts.append(
+            '[LEAD IS FRUSTRATED — they feel you are repeating / wasting '
+            'time. Do NOT apologise at length. Do NOT restate anything. '
+            'ONE short line that goes STRAIGHT to the concrete next step '
+            'using what you already know: e.g. "Sir seedha point pe aati '
+            'hoon — [their locality] mein [their BHK] ke options abhi '
+            'WhatsApp pe bhej rahi hoon. Visit ke liye weekend mein time '
+            'milega?" If they have ALREADY complained before this, or they '
+            'said to hang up: thank them in one line and END the call '
+            'gracefully instead.]'
+        )
+        return "\n".join(parts)
 
     # Close nudges. Never a verbatim script, never a fait-accompli booking —
     # the LLM composes the words, responds to what the lead JUST said, and
