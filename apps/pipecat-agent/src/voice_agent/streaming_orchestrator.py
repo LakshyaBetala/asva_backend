@@ -625,7 +625,7 @@ async def run_turn_streaming(
 
 # -- Helpers (same as turn_orchestrator) ------------------------------------
 
-def _cached_prompt(industry_key: str = "chemicals") -> str:
+def _cached_prompt(industry_key: str = "real_estate") -> str:
     """Per-industry base prompt. load_priya_prompt() does the caching."""
     return load_priya_prompt(industry_key)
 
@@ -919,21 +919,24 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
     turn = len(conv.recent_priya_turns)
     is_silence = intent == "silence"
 
-    # PROACTIVE CLOSE — detect visit-asks AND auto-close after 2 turns.
-    # The base prompt asks Priya to drive toward a slot, but the LLM keeps
-    # asking budget/school/timeline questions instead. This code-level
-    # directive overrides that drift.
+    # CLOSE NUDGES — two levels, neither dictates a canned "booked" line.
+    # The old version force-injected a verbatim "Saturday 11 AM reserved"
+    # confirmation after just 2 turns, regardless of what the lead said —
+    # Priya repeated it word-for-word every turn while leads asked "who are
+    # you?" (calls 7301f7a0, 40ec03f3). A close is PROPOSED as a question;
+    # only the lead's yes books it.
     lead_lc = (lead_text or "").lower()
     _VISIT_ASK_KEYWORDS = (
         "site visit", "site-visit", "schedule a visit", "schedule visit",
         "book a visit", "book visit", "appointment", "visit kab",
-        "visit kar", "visit kab", "kab visit", "visit ke liye",
+        "visit kar", "kab visit", "visit ke liye",
         "visit la", "site la", "site varuven", "site varum",
         "visit aanaa", "visit panna", "appointment podu",
     )
     lead_wants_visit = any(k in lead_lc for k in _VISIT_ASK_KEYWORDS)
-    # After 2 lead turns, force the close — don't wait for them to ask.
-    force_proactive_close = turn >= 2 and intent in ("normal", "backchannel")
+    # After several lead turns, nudge toward the slot — but only if the
+    # conversation has actually produced a requirement to book against.
+    nudge_close = turn >= 4 and intent in ("normal", "backchannel")
 
     parts = ['[ROMAN SCRIPT ONLY. No Devanagari. No Tamil script.]']
 
@@ -996,33 +999,29 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
 
     parts.append(f'Lead: "{lead_text}"')
 
-    # FORCE-CLOSE override: if lead asked for a visit, OR we've had 2+ turns
-    # already, INJECT the closing script. This overrides all other intent
-    # branches below. The LLM keeps drifting into school/budget questions
-    # instead of closing — this is the code-level kill switch.
-    if lead_wants_visit or force_proactive_close:
-        if lang == "ta-IN":
-            close_line = (
-                "Sari sir, Saturday kaalai 11 mani site visit reserve pannuren. "
-                "Address-um broker uncle contact-um indha WhatsApp number-ku "
-                "ippo anuppuren. Saturday paarpom!"
-            )
-        elif lang == "en-IN":
-            close_line = (
-                "Got it sir, I'm reserving a Saturday 11 AM site visit for you. "
-                "Sending the address and broker uncle's contact to this WhatsApp "
-                "number right now. See you Saturday!"
-            )
-        else:
-            close_line = (
-                "Bilkul sir, Saturday subah 11 baje ka site visit slot reserve "
-                "kar deti hoon. Address aur broker uncle ka contact iss WhatsApp "
-                "number pe abhi bhej rahi hoon. Saturday ko milte hain!"
-            )
+    # Close nudges. Never a verbatim script, never a fait-accompli booking —
+    # the LLM composes the words, responds to what the lead JUST said, and
+    # proposes the slot as a question the lead can say yes to.
+    if lead_wants_visit:
         parts.append(
-            f'[PROACTIVE CLOSE — lead has named locality / asked for visit / been talking for 2+ turns. '
-            f'Say EXACTLY: "{close_line}" Then STOP. No more questions. No "Got it Laksh". '
-            f'Do NOT ask budget, school, BHK, timeline. Just close the visit.]'
+            '[LEAD ASKED FOR A VISIT — close now. First acknowledge what they '
+            'just said in their words. Then offer a CHOICE of two specific '
+            'slots (e.g. Saturday morning vs Sunday morning) as a QUESTION. '
+            'Confirm only AFTER they pick one — then repeat day + time + '
+            'locality back, say the address comes on this WhatsApp number, '
+            'and stop. Never say a visit is already reserved before they '
+            'choose. Refer to "our broker", never "broker uncle".]'
+        )
+        return "\n".join(parts)
+    if nudge_close:
+        parts.append(
+            '[TIME TO MOVE TOWARD THE SLOT — but earn it. First respond to '
+            'what the lead just said. If you already know their intent '
+            '(buy/rent) AND a locality/requirement: propose a visit slot as a '
+            'CHOICE of two options, as a question. If you do NOT yet know '
+            'those, ask the single most important missing question instead '
+            '(locality first, then BHK, then budget). NEVER announce a '
+            'booking the lead has not said yes to.]'
         )
         return "\n".join(parts)
 

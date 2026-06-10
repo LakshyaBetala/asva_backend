@@ -84,9 +84,9 @@ class CallContext:
     started_at_monotonic: float
     language_state: LanguageState
     # Drives per-turn prompt selection. Set from tenant.industry_key at boot;
-    # defaults to chemicals so legacy call paths (tests, local harness without
-    # explicit tenant resolution) still produce a usable system prompt.
-    industry_key: str = "chemicals"
+    # defaults to real_estate — the product's only vertical (SPC/chemicals
+    # persona deleted 2026-06-11).
+    industry_key: str = "real_estate"
     conversation_state: ConversationState = field(default_factory=ConversationState)
     turn_idx: int = 0
     used_intro_cache: bool = False
@@ -142,7 +142,7 @@ def make_initial_context(
     lead_first_name: str | None,
     lead_company: str | None,
     default_lang: str,
-    industry_key: str = "chemicals",
+    industry_key: str = "real_estate",
 ) -> CallContext:
     return CallContext(
         call_id=call_id,

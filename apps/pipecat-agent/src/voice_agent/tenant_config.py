@@ -93,8 +93,8 @@ class TenantNotFound(LookupError):
 
 # --- In-memory seed registry (Phase 1).
 # Phase 2 replaces this with a Supabase `tenants` table fetch.
-# Two seeded rows: the frozen SPC tenant (current behavior) and the
-# demo real-estate broker tenant used to close week-1 clients.
+# Real estate only — the SPC/chemicals persona was deleted 2026-06-11;
+# Almmatix Voice ships one vertical: real-estate brokers.
 
 _SEED: dict[str, TenantConfig] = {
     # The meta-tenant. Almmatix's own outbound — Priya rings up brokers
@@ -154,18 +154,6 @@ _SEED: dict[str, TenantConfig] = {
             "Mansarovar": "Man-sarovar",
             "Vaishali Nagar": "Vaishali Nagar",
         },
-    ),
-    "spc-tenant": TenantConfig(
-        tenant_id="spc-tenant",
-        company_name="Supreme Petrochemicals",
-        agent_name="Priya",
-        city="Chennai",
-        default_lang="hi-IN",
-        voice_id_en="emily",
-        voice_id_hi="anushka",
-        voice_id_ta="anushka",
-        industry_key="chemicals",
-        pronunciation_pack={"SPC": "S-P-C"},
     ),
     "demo-broker-tenant": TenantConfig(
         tenant_id="demo-broker-tenant",

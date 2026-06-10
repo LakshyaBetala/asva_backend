@@ -7,8 +7,8 @@ so the LLM stops drifting back to the prior-language context after a
 state-machine switch.
 
 The intro-text builder reads from the per-call TenantConfig + IndustryBrain,
-so a chemicals tenant gets "Supreme Petrochemicals" and a real-estate
-tenant gets the broker pitch — same code path, different config row.
+so every tenant gets its own company name and vertical pitch — same code
+path, different config row. Real estate is the only product vertical.
 
 Parity note: packages/shared/src/intro-cache.ts is the TS twin used by
 the web/Node cache. Until that's migrated to tenant-aware lookup, the
@@ -25,17 +25,16 @@ from voice_agent.industry import get_brain
 from voice_agent.tenant_config import TenantConfig
 
 # Per-industry prompt file mapping. Each tenant's industry_key picks one;
-# unmapped keys fall back to the chemicals prompt for safety (SPC behavior
-# is the known-good baseline). Override resolution in tests via load_path.
+# unmapped keys fall back to the real-estate prompt — Almmatix Voice is a
+# real-estate product; the SPC/chemicals persona was removed 2026-06-11.
 _PROMPTS_DIR = (
     Path(__file__).resolve().parents[4] / "packages" / "shared" / "src" / "prompts"
 )
 _PROMPT_FILES: dict[str, str] = {
-    "chemicals": "priya-system.md",
     "real_estate": "priya-real-estate.md",
     "voice_agent_sales": "priya-voice-agent-sales.md",
 }
-_DEFAULT_INDUSTRY = "chemicals"
+_DEFAULT_INDUSTRY = "real_estate"
 
 # In-process cache keyed by industry — each prompt file loads once per process.
 _PROMPT_CACHE: dict[str, str] = {}
@@ -51,8 +50,8 @@ def load_priya_prompt(
     """Load the per-industry base prompt.
 
     `industry_key` maps to a markdown file under packages/shared/src/prompts/.
-    Unknown industries fall back to chemicals (SPC), matching the safe-default
-    posture used elsewhere. Pass an explicit `path` to override (tests).
+    Unknown industries fall back to real_estate (the product's home vertical).
+    Pass an explicit `path` to override (tests).
     """
     if path is not None:
         return path.read_text(encoding="utf-8")

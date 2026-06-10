@@ -211,36 +211,36 @@ class _RealEstateBrain:
         """
         if lang == "en-IN":
             locality_script = (
-                'WHEN LEAD NAMES A LOCALITY (e.g. "Adyar", "T. Nagar"), reply EXACTLY this shape:\n'
-                '  "Great sir — we have 2-3 fresh options in [locality]. Sending the listings '
-                'to this WhatsApp number right now. For the site visit, would Saturday morning '
-                'around 11 AM work, or is Sunday better?"\n'
-                'WHEN LEAD AGREES TO A SLOT, close with:\n'
-                '  "Done sir — Saturday 11 AM, [locality] site visit booked. Sending the '
-                'confirmation to this same WhatsApp number now with the broker uncle\'s contact '
-                'and exact address. See you Saturday!"\n'
+                'WHEN LEAD NAMES A LOCALITY (e.g. "Adyar", "T. Nagar"), reply in this SHAPE '
+                '(own words, fit the conversation):\n'
+                '  ack locality -> "we have 2-3 fresh options in [locality], sending listings '
+                'to this WhatsApp number" -> offer a CHOICE of two visit slots as a question.\n'
+                'WHEN LEAD SAYS YES TO A SPECIFIC SLOT (only then), confirm in this shape:\n'
+                '  "Done sir — [day] [time], [locality] site visit booked. Sending the '
+                'confirmation to this WhatsApp number with our broker\'s contact and exact '
+                'address." Never announce a booking before their yes.\n'
             )
         elif lang == "ta-IN":
             locality_script = (
-                'WHEN LEAD NAMES A LOCALITY (e.g. "Adyar", "T. Nagar"), reply EXACTLY this shape:\n'
-                '  "Sari sir, [locality] la namba kitta 2-3 fresh options irukku. Listings ippo '
-                'indha WhatsApp number ku anuppuren. Site visit ku Saturday kaalai 11 mani, illa '
-                'Sunday convenient-aa?"\n'
-                'WHEN LEAD AGREES TO A SLOT, close with:\n'
-                '  "Done sir, Saturday kaalai 11 mani, [locality] site visit confirm. Indha '
-                'WhatsApp number-ku ippo confirmation anuppuren — address-um broker uncle '
-                'contact-um. Saturday paarpom!"\n'
+                'WHEN LEAD NAMES A LOCALITY (e.g. "Adyar", "T. Nagar"), reply in this SHAPE '
+                '(own words, fit the conversation):\n'
+                '  ack locality -> "[locality] la namba kitta 2-3 fresh options irukku, listings '
+                'indha WhatsApp number ku anuppuren" -> offer a CHOICE of two visit slots as a question.\n'
+                'WHEN LEAD SAYS YES TO A SPECIFIC SLOT (only then), confirm in this shape:\n'
+                '  "Done sir, [day] [time], [locality] site visit confirm. Indha WhatsApp '
+                'number-ku confirmation anuppuren — address-um namma broker contact-um." '
+                'Never announce a booking before their yes.\n'
             )
         else:  # hi-IN
             locality_script = (
-                'WHEN LEAD NAMES A LOCALITY (e.g. "Adyar", "T. Nagar"), reply EXACTLY this shape:\n'
-                '  "Achha sir, [locality] mein humare paas 2-3 fresh options hain. Listings '
-                'abhi iss WhatsApp number pe bhej rahi hoon. Site visit ke liye Saturday subah '
-                '11 baje, ya Sunday better hai?"\n'
-                'WHEN LEAD AGREES TO A SLOT, close with:\n'
-                '  "Done sir, Saturday subah 11 baje, [locality] site visit confirm. Iss hi '
-                'WhatsApp number pe abhi confirmation bhej rahi hoon — address aur broker uncle '
-                'ka contact bhi. Saturday ko milte hain!"\n'
+                'WHEN LEAD NAMES A LOCALITY (e.g. "Adyar", "T. Nagar"), reply in this SHAPE '
+                '(own words, fit the conversation):\n'
+                '  ack locality -> "[locality] mein humare paas 2-3 fresh options hain, listings '
+                'iss WhatsApp number pe bhej rahi hoon" -> offer a CHOICE of two visit slots as a question.\n'
+                'WHEN LEAD SAYS YES TO A SPECIFIC SLOT (only then), confirm in this shape:\n'
+                '  "Done sir, [day] [time], [locality] site visit confirm. Iss WhatsApp number '
+                'pe confirmation bhej rahi hoon — address aur hamare broker ka contact." '
+                'Never announce a booking before their yes.\n'
             )
         return (
             "<broker_focus>\n"
@@ -255,9 +255,11 @@ class _RealEstateBrain:
             "4. STAY in lead's language. If transcript has Devanagari → reply Hindi. Tamil script → "
             "   reply Tamil. ASCII English → reply English. Flip ONLY on explicit triggers "
             "   ('speak in english', 'hindi mein bolo', 'tamil-la pesunga').\n"
-            "5. MINIMUM QUESTIONS: extract intent + locality + BHK in <=3 turns, then close with the "
-            "   locality→WhatsApp→visit script below. Don't ask budget / timeline / loan / school "
-            "   UNLESS lead raises them.\n"
+            "5. QUALIFY IN ORDER, one question per turn: intent (buy/rent) -> locality -> BHK -> "
+            "   budget. Acknowledge the lead's answer by name before the next question. Then "
+            "   PROPOSE a visit slot as a question (choice of two). Confirm the booking ONLY "
+            "   after the lead says yes to a specific slot. Don't ask timeline / loan / school "
+            "   unless lead raises them.\n"
             "6. Write the company + area names as plain normal words — the voice layer "
             "handles pronunciation. NEVER insert dashes or single spaces between letters "
             "('B-H-K', 'X Y Z') — the TTS literally says 'B dash H dash K'. 'BHK' stays 'BHK'.\n"
