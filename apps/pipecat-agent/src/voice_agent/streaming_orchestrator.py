@@ -413,19 +413,28 @@ async def run_turn_streaming(
     audio_in: bytes,
     deps: StreamingDependencies,
     prior_slots: QualificationSlots,
+    pre_transcribed=None,  # STTResult finalized by the streaming-STT WS
 ) -> AsyncIterator[StreamEvent]:
     """Stream audio chunks as LLM generates sentences.
 
     Yields AudioChunkEvent per sentence, then one final TurnCompleteEvent.
     The Exotel WS handler plays each AudioChunkEvent immediately.
+
+    When `pre_transcribed` is set, the utterance was already finalized by
+    Sarvam's streaming WebSocket (server-side endpointing) — step 1 is a
+    no-op and audio_in may be empty.
     """
     timings: dict[str, int] = {}
     t0 = time.monotonic()
 
     # ---- 1. STT -----------------------------------
-    stt_t0 = time.monotonic()
-    stt_result = await deps.stt.transcribe(audio_in)
-    timings["stt_ms"] = int((time.monotonic() - stt_t0) * 1000)
+    if pre_transcribed is not None:
+        stt_result = pre_transcribed
+        timings["stt_ms"] = 0
+    else:
+        stt_t0 = time.monotonic()
+        stt_result = await deps.stt.transcribe(audio_in)
+        timings["stt_ms"] = int((time.monotonic() - stt_t0) * 1000)
 
     raw_transcript = (stt_result.transcript or "").strip()
 

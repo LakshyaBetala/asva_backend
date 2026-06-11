@@ -50,6 +50,8 @@ from .prompts import build_intro_text
 from .qualification import QualificationSlots
 from .tenant_config import TenantConfig, TenantNotFound, get_tenant
 from .r2_client import R2Client, R2Config, R2ConfigError
+from .sarvam_stt import STTResult
+from .sarvam_streaming_stt import SarvamStreamingSTT
 from .streaming_orchestrator import (
     AudioChunkEvent,
     StreamingDependencies,
@@ -204,6 +206,26 @@ _PCM_SILENCE_THRESHOLD = 300
 BARGE_IN_ENABLED = os.environ.get("EXOTEL_BARGE_IN", "1").strip().lower() not in (
     "0", "false", "no", "",
 )
+
+# Streaming STT (Sarvam saaras:v3 over WebSocket). Audio streams to Sarvam
+# WHILE the lead talks; the server's model-based VAD endpoints the utterance
+# and the final transcript lands ~150ms later — replacing BOTH the local
+# 750ms amplitude-silence wait AND the 350-2500ms batch STT POST. The local
+# buffer+batch path below stays as the automatic fallback if the Sarvam WS
+# fails to connect or dies mid-call. Disable with EXOTEL_STREAMING_STT=0.
+STREAMING_STT_ENABLED = os.environ.get(
+    "EXOTEL_STREAMING_STT", "1"
+).strip().lower() not in ("0", "false", "no", "")
+
+# After Sarvam finalizes an utterance, hold the turn for this grace window —
+# if the lead was only pausing mid-sentence, the next segment arrives and is
+# MERGED into one utterance (the "answers half-questions" fix, done at the
+# source). The hold extends while Sarvam reports speech is still active,
+# capped at STREAM_MAX_HOLD_SEC so a stuck VAD flag can't stall the call.
+STREAM_MERGE_GRACE_SEC = int(
+    os.environ.get("EXOTEL_STREAM_MERGE_GRACE_MS", "250")
+) / 1000.0
+STREAM_MAX_HOLD_SEC = 4.0
 _BARGE_IN_PCM_THRESHOLD = int(os.environ.get("EXOTEL_BARGE_IN_THRESHOLD", "2500"))
 BARGE_IN_MS = int(os.environ.get("EXOTEL_BARGE_IN_MS", "500"))
 
@@ -506,6 +528,13 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
     # Wall-clock time until which Priya is still speaking; ignore inbound
     # audio until then so she doesn't transcribe her own echo.
     speaking_until = 0.0
+    # Streaming-STT state. pending_finals holds utterance segments Sarvam has
+    # finalized but we haven't answered yet (merge-grace window may still be
+    # open). None stt_stream = batch fallback path.
+    stt_stream: SarvamStreamingSTT | None = None
+    pending_finals: list[STTResult] = []
+    pending_deadline = 0.0
+    pending_first_at = 0.0
 
     try:
         async for frame in session:
@@ -564,9 +593,32 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                     )
                 except Exception:
                     logger.exception("call_id=%s intro playback failed", call_id)
+                # Open the Sarvam streaming-STT WS in the background (takes
+                # ~1.2s) — it overlaps the intro playback, during which all
+                # inbound audio is zero-fed anyway. If connect fails, the
+                # session marks itself failed and we fall back to batch.
+                if STREAMING_STT_ENABLED and os.environ.get("SARVAM_API_KEY"):
+                    stt_stream = SarvamStreamingSTT(
+                        api_key=os.environ["SARVAM_API_KEY"],
+                        sample_rate=EXOTEL_STREAM_SAMPLE_RATE,
+                    )
+
+                    async def _start_stt(s: SarvamStreamingSTT = stt_stream) -> None:
+                        try:
+                            await s.start()
+                        except Exception:
+                            logger.exception(
+                                "streaming STT connect failed — batch fallback"
+                            )
+                            s.failed = True
+
+                    _stt_task = asyncio.create_task(_start_stt())
+                    _bg_tasks.add(_stt_task)
+                    _stt_task.add_done_callback(_bg_tasks.discard)
                 buffer.clear()
                 buffered_ms = silence_ms = voiced_ms = 0
                 barge_voiced_ms = 0
+                pending_finals.clear()
                 continue
             if isinstance(frame, StreamStopFrame):
                 logger.info("call_id=%s stopped: %s", call_id, frame.reason)
@@ -579,6 +631,20 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
 
             chunk = frame.audio_bytes
             chunk_ms = _chunk_ms(chunk, EXOTEL_STREAM_SAMPLE_RATE)
+
+            # A dead Sarvam WS must never kill a phone call — drop to the
+            # batch path for the rest of the call (one utterance may be lost
+            # at the failure moment; the lead naturally repeats).
+            if stt_stream is not None and stt_stream.failed:
+                logger.warning(
+                    "call_id=%s streaming STT died — batch STT fallback", call_id
+                )
+                _close_task = asyncio.create_task(stt_stream.close())
+                _bg_tasks.add(_close_task)
+                _close_task.add_done_callback(_bg_tasks.discard)
+                stt_stream = None
+                pending_finals.clear()
+            use_stream = stt_stream is not None
 
             # While Priya's reply is still playing (+ a settle tail) we are
             # half-duplex: most inbound audio is just her own echo. EXCEPT —
@@ -597,6 +663,16 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                 if not interrupted:
                     buffer.clear()
                     buffered_ms = silence_ms = voiced_ms = 0
+                    if use_stream:
+                        # Keep the Sarvam WS alive + its VAD timeline
+                        # continuous, but feed SILENCE instead of the line
+                        # audio (which is mostly Priya's own echo). Anything
+                        # it finalized from just before she spoke is stale —
+                        # she already answered it.
+                        await stt_stream.feed(b"\x00" * len(chunk))
+                        pending_finals.clear()
+                        while stt_stream.pop_final() is not None:
+                            pass
                     if active.ctx.should_hard_stop():
                         await session.send_clear()
                         break
@@ -610,34 +686,82 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                 buffered_ms = silence_ms = voiced_ms = 0
                 # fall through: this chunk starts the lead's interrupting turn.
 
-            silent = _is_silent_pcm(chunk)
-            if silent:
-                silence_ms += chunk_ms
+            pre_transcribed: STTResult | None = None
+            wav = b""
+            if use_stream:
+                # STREAMING path: every frame goes straight to Sarvam; its
+                # model-based VAD endpoints the utterance server-side. Local
+                # silence accounting / buffering is bypassed entirely.
+                await stt_stream.feed(chunk)
+                while True:
+                    fin = stt_stream.pop_final()
+                    if fin is None:
+                        break
+                    if not pending_finals:
+                        pending_first_at = time.monotonic()
+                    pending_finals.append(fin)
+                    pending_deadline = time.monotonic() + STREAM_MERGE_GRACE_SEC
+                if not pending_finals:
+                    if active.ctx.should_hard_stop():
+                        await session.send_clear()
+                        break
+                    continue
+                # Merge-grace: hold the turn while the grace window is open
+                # or Sarvam still hears the lead talking — a mid-sentence
+                # pause then arrives as a second segment and is merged below
+                # instead of being answered as a half-question.
+                now = time.monotonic()
+                held_too_long = now - pending_first_at > STREAM_MAX_HOLD_SEC
+                if (now < pending_deadline or stt_stream.speech_active) and not held_too_long:
+                    if active.ctx.should_hard_stop():
+                        await session.send_clear()
+                        break
+                    continue
+                last = pending_finals[-1]
+                pre_transcribed = STTResult(
+                    transcript=" ".join(
+                        r.transcript for r in pending_finals if r.transcript
+                    ).strip(),
+                    language_code=last.language_code,
+                    confidence=min(r.confidence for r in pending_finals),
+                    request_id=last.request_id,
+                )
+                if len(pending_finals) > 1:
+                    _clog(
+                        call_id, "MERGE",
+                        f"{len(pending_finals)} segments -> one utterance",
+                    )
+                pending_finals = []
             else:
-                silence_ms = 0
-                voiced_ms += chunk_ms
-            # Don't accumulate leading silence — only buffer once speech starts.
-            if voiced_ms > 0:
-                buffer.extend(chunk)
-                buffered_ms += chunk_ms
+                # BATCH fallback path: local amplitude VAD + buffered POST.
+                silent = _is_silent_pcm(chunk)
+                if silent:
+                    silence_ms += chunk_ms
+                else:
+                    silence_ms = 0
+                    voiced_ms += chunk_ms
+                # Don't accumulate leading silence — only buffer once speech starts.
+                if voiced_ms > 0:
+                    buffer.extend(chunk)
+                    buffered_ms += chunk_ms
 
-            # Flush only when the lead actually spoke, then paused. Pure
-            # silence never flushes → Priya stays quiet and waits naturally.
-            should_flush = voiced_ms >= MIN_VOICED_MS and (
-                silence_ms >= SILENCE_MS_THRESHOLD or buffered_ms >= MAX_BUFFER_MS
-            )
-            if not should_flush:
-                if active.ctx.should_hard_stop():
-                    await session.send_clear()
-                    break
-                continue
+                # Flush only when the lead actually spoke, then paused. Pure
+                # silence never flushes → Priya stays quiet and waits naturally.
+                should_flush = voiced_ms >= MIN_VOICED_MS and (
+                    silence_ms >= SILENCE_MS_THRESHOLD or buffered_ms >= MAX_BUFFER_MS
+                )
+                if not should_flush:
+                    if active.ctx.should_hard_stop():
+                        await session.send_clear()
+                        break
+                    continue
 
-            # Run the STREAMING orchestrator — audio chunks arrive as
-            # sentences are generated, so the lead hears Priya's first
-            # sentence ~1.5s after they stop talking (vs 8-10s sequential).
-            wav = exotel_pcm_to_wav_for_stt(bytes(buffer), EXOTEL_STREAM_SAMPLE_RATE)
-            buffer.clear()
-            buffered_ms = silence_ms = voiced_ms = 0
+                # Run the STREAMING orchestrator — audio chunks arrive as
+                # sentences are generated, so the lead hears Priya's first
+                # sentence ~1.5s after they stop talking (vs 8-10s sequential).
+                wav = exotel_pcm_to_wav_for_stt(bytes(buffer), EXOTEL_STREAM_SAMPLE_RATE)
+                buffer.clear()
+                buffered_ms = silence_ms = voiced_ms = 0
 
             streaming_deps = StreamingDependencies(
                 stt=active.deps.stt,
@@ -661,6 +785,7 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                     audio_in=wav,
                     deps=streaming_deps,
                     prior_slots=active.slots,
+                    pre_transcribed=pre_transcribed,
                 ):
                     if isinstance(event, AudioChunkEvent):
                         try:
@@ -745,6 +870,7 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
             buffer.clear()
             buffered_ms = silence_ms = voiced_ms = 0
             barge_voiced_ms = 0
+            pending_finals.clear()
 
             if turn_end_call:
                 # Let the goodbye line finish playing, then drop the call.
@@ -791,6 +917,11 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
     except WebSocketDisconnect:
         logger.info("call_id=%s WS disconnected", call_id)
     finally:
+        if stt_stream is not None:
+            try:
+                await stt_stream.close()
+            except Exception:
+                pass
         # Keep the slots/context for a short grace period so a webhook can
         # still read final state; in production push to DB instead.
         if active is not None:
