@@ -5,16 +5,28 @@ roughly 5-8x faster than Gemini 2.5 Flash. The API is OpenAI-compatible
 so the adapter is simpler than the Gemini one.
 
 Used as a drop-in replacement for gemini_llm when GROQ_API_KEY is set.
+
+GROQ_BASE_URL lets the same adapter speak to any OpenAI-compatible host.
+Main use: Cerebras (https://api.cerebras.ai/v1) serves the SAME
+llama-3.3-70b at ~1800 tok/s with a 60K-TPM free tier — 5x Groq's 12K,
+which our faster streaming-STT turn rate now exceeds. Swap provider with
+env only, no code change:
+
+    GROQ_BASE_URL=https://api.cerebras.ai/v1
+    GROQ_API_KEY=<cerebras key>
+    GROQ_MODEL=llama-3.3-70b
+    GROQ_EXTRACT_MODEL=llama3.1-8b
 """
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from typing import Any, AsyncIterator
 
 import httpx
 
-GROQ_BASE = "https://api.groq.com/openai/v1"
+GROQ_BASE = os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 

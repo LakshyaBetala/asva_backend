@@ -1153,6 +1153,11 @@ def _build_deps_from_env() -> TurnDependencies:
         # production caught this with mid-stream 429s breaking calls outright.
         llm_adapter: Any = _GroqAdapter(
             api_key=groq_key, model=groq_model, client=http,
+            # Provider-specific small model for slot extraction (Groq:
+            # llama-3.1-8b-instant, Cerebras: llama3.1-8b).
+            extract_model=os.environ.get(
+                "GROQ_EXTRACT_MODEL", "llama-3.1-8b-instant"
+            ),
             gemini_key="", gemini_model=gemini_model,
             fallback_gemini_key=gemini_key,
             fallback_gemini_model=gemini_model,

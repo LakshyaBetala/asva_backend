@@ -575,6 +575,7 @@ def _build_deps(env: dict[str, str], http: httpx.AsyncClient) -> TurnDependencie
         # Extract with Groq too — Gemini free tier 429s under live-call rate.
         llm_adapter = _GroqAdapter(
             api_key=groq_key, model=groq_model, client=http,
+            extract_model=env.get("GROQ_EXTRACT_MODEL", "llama-3.1-8b-instant"),
             gemini_key="", gemini_model=gemini_model,
         )
     else:
