@@ -61,12 +61,13 @@ async def generate(
     generation_config: dict[str, Any] | None = None,
     client: httpx.AsyncClient | None = None,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    base_url: str = GROQ_BASE,
 ) -> GroqResponse:
     if not api_key:
         raise GroqError("missing GROQ_API_KEY")
 
     cfg = {**DEFAULT_GENERATION_CONFIG, **(generation_config or {})}
-    url = f"{GROQ_BASE}/chat/completions"
+    url = f"{base_url.rstrip('/')}/chat/completions"
     body = {
         "model": model,
         "messages": [
@@ -115,12 +116,13 @@ async def stream_generate(
     generation_config: dict[str, Any] | None = None,
     client: httpx.AsyncClient | None = None,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    base_url: str = GROQ_BASE,
 ) -> AsyncIterator[str]:
     if not api_key:
         raise GroqError("missing GROQ_API_KEY")
 
     cfg = {**DEFAULT_GENERATION_CONFIG, **(generation_config or {})}
-    url = f"{GROQ_BASE}/chat/completions"
+    url = f"{base_url.rstrip('/')}/chat/completions"
     body = {
         "model": model,
         "messages": [

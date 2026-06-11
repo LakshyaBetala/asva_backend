@@ -240,6 +240,13 @@ class _GroqAdapter:
     # but still survive a Groq daily-cap hit on the response path.
     fallback_gemini_key: str = ""
     fallback_gemini_model: str = "gemini-2.0-flash"
+    # Optional second OpenAI-compatible provider tried BEFORE Gemini when
+    # the primary 429s — a separate free-tier TPM pool on faster hardware
+    # (intended: Cerebras gpt-oss-120b at ~3000 tok/s, 30K TPM). Env:
+    # ALT_LLM_BASE_URL / ALT_LLM_API_KEY / ALT_LLM_MODEL.
+    alt_base_url: str = ""
+    alt_api_key: str = ""
+    alt_model: str = ""
 
     async def respond(self, system_message: str, user_message: str) -> str:
         resp = await groq_generate(
@@ -299,13 +306,46 @@ class _GroqAdapter:
                 # Priya has emitted text, switching providers mid-sentence would
                 # produce gibberish. If we crashed mid-stream, propagate.
                 fb_key = self.fallback_gemini_key or self.gemini_key
-                if not (transient and first_chunk and fb_key):
+                has_alt = bool(self.alt_base_url and self.alt_api_key and self.alt_model)
+                if not (transient and first_chunk and (fb_key or has_alt)):
                     raise
-                logger.warning(
-                    "groq stream failed (%s) before first chunk; falling back to gemini",
-                    last_exc,
-                )
                 break
+        # Hop 1: alternate OpenAI-compatible pool (Cerebras) — faster than
+        # Gemini and a fully separate free-tier TPM budget.
+        if self.alt_base_url and self.alt_api_key and self.alt_model:
+            logger.warning(
+                "groq stream failed (%s); trying alt provider %s/%s",
+                last_exc, self.alt_base_url, self.alt_model,
+            )
+            cfg: dict[str, Any] = {}
+            if "gpt-oss" in self.alt_model:
+                # gpt-oss is a reasoning model — cap deliberation for telephony.
+                cfg["reasoning_effort"] = "low"
+            got_chunk = False
+            try:
+                async for chunk in groq_stream(
+                    system_message=system_message,
+                    user_message=user_message,
+                    api_key=self.alt_api_key,
+                    model=self.alt_model,
+                    client=self.client,
+                    base_url=self.alt_base_url,
+                    generation_config=cfg or None,
+                ):
+                    got_chunk = True
+                    yield chunk
+                return
+            except GroqError as exc:
+                if got_chunk:
+                    # Already speaking — switching providers mid-sentence
+                    # would produce gibberish. Propagate.
+                    raise
+                logger.warning("alt provider failed too (%s); trying gemini", exc)
+        # Hop 2: Gemini (thinking disabled for 2.5-family — see gemini_llm).
+        fb_key = self.fallback_gemini_key or self.gemini_key
+        if not fb_key:
+            raise last_exc if last_exc else GroqError("groq stream failed")
+        logger.warning("falling back to gemini for this turn")
         # Reached only on transient failure before any chunk yielded.
         async for chunk in gemini_stream(
             system_message=system_message,
@@ -577,6 +617,11 @@ def _build_deps(env: dict[str, str], http: httpx.AsyncClient) -> TurnDependencie
             api_key=groq_key, model=groq_model, client=http,
             extract_model=env.get("GROQ_EXTRACT_MODEL", "llama-3.1-8b-instant"),
             gemini_key="", gemini_model=gemini_model,
+            fallback_gemini_key=gemini_key,
+            fallback_gemini_model=gemini_model,
+            alt_base_url=env.get("ALT_LLM_BASE_URL", ""),
+            alt_api_key=env.get("ALT_LLM_API_KEY", ""),
+            alt_model=env.get("ALT_LLM_MODEL", ""),
         )
     else:
         print(f"[LLM: Gemini {gemini_model}]")

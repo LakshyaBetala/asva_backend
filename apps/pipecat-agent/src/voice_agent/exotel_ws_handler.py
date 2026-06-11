@@ -1161,6 +1161,11 @@ def _build_deps_from_env() -> TurnDependencies:
             gemini_key="", gemini_model=gemini_model,
             fallback_gemini_key=gemini_key,
             fallback_gemini_model=gemini_model,
+            # Second OpenAI-compatible pool tried before Gemini on a 429 —
+            # e.g. Cerebras gpt-oss-120b (30K TPM free, ~3000 tok/s).
+            alt_base_url=os.environ.get("ALT_LLM_BASE_URL", ""),
+            alt_api_key=os.environ.get("ALT_LLM_API_KEY", ""),
+            alt_model=os.environ.get("ALT_LLM_MODEL", ""),
         )
     else:
         llm_adapter = _GeminiAdapter(api_key=gemini_key, model=gemini_model, client=http)
