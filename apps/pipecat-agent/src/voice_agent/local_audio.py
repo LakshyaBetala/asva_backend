@@ -28,6 +28,7 @@ import argparse
 import asyncio
 import logging
 import os
+import re
 import sys
 import time
 import wave
@@ -207,6 +208,19 @@ class _GeminiAdapter:
         return resp.text
 
 
+# Groq 429 bodies advise exactly when the TPM window frees up:
+#   "Please try again in 410ms"  /  "Please try again in 3.86s"
+_GROQ_RETRY_RE = re.compile(r"try again in\s*([\d.]+)\s*(ms|s)\b")
+
+
+def _parse_groq_retry_after(msg: str) -> float | None:
+    m = _GROQ_RETRY_RE.search(msg)
+    if not m:
+        return None
+    val = float(m.group(1))
+    return val / 1000.0 if m.group(2) == "ms" else val
+
+
 @dataclass
 class _GroqAdapter:
     api_key: str
@@ -241,35 +255,57 @@ class _GroqAdapter:
         """Stream from Groq, fall back to Gemini on 429 / 5xx so a daily-cap
         hit on Groq doesn't kill the live call. Production logs caught this
         the hard way: Groq raised 'Rate limit reached on tokens per day' mid-
-        stream and the orchestrator just crashed; the lead got silence."""
+        stream and the orchestrator just crashed; the lead got silence.
+
+        TPM 429s come with a server-advised wait ("Please try again in
+        410ms"). When that wait is short, sleeping it out and retrying Groq
+        beats switching providers — call 21c9952b paid 5.7-6.3s for Gemini
+        fallbacks that a sub-second retry would have avoided."""
         first_chunk = True
-        try:
-            async for chunk in groq_stream(
-                system_message=system_message,
-                user_message=user_message,
-                api_key=self.api_key,
-                model=self.model,
-                client=self.client,
-            ):
-                first_chunk = False
-                yield chunk
-            return
-        except GroqError as exc:
-            msg = str(exc).lower()
-            transient = (
-                "429" in msg or "rate limit" in msg or "tokens per day" in msg
-                or "500" in msg or "502" in msg or "503" in msg or "504" in msg
-            )
-            # Only fall back if we haven't already started speaking — once
-            # Priya has emitted text, switching providers mid-sentence would
-            # produce gibberish. If we crashed mid-stream, propagate.
-            fb_key = self.fallback_gemini_key or self.gemini_key
-            if not (transient and first_chunk and fb_key):
-                raise
-            logger.warning(
-                "groq stream failed (%s) before first chunk; falling back to gemini",
-                exc,
-            )
+        retried = False
+        last_exc: GroqError | None = None
+        while True:
+            try:
+                async for chunk in groq_stream(
+                    system_message=system_message,
+                    user_message=user_message,
+                    api_key=self.api_key,
+                    model=self.model,
+                    client=self.client,
+                ):
+                    first_chunk = False
+                    yield chunk
+                return
+            except GroqError as exc:
+                last_exc = exc
+                msg = str(exc).lower()
+                transient = (
+                    "429" in msg or "rate limit" in msg or "tokens per day" in msg
+                    or "500" in msg or "502" in msg or "503" in msg or "504" in msg
+                )
+                wait = _parse_groq_retry_after(msg)
+                if (
+                    transient and first_chunk and not retried
+                    and wait is not None and wait <= 2.0
+                ):
+                    retried = True
+                    logger.warning(
+                        "groq 429 — retrying in %.2fs (server-advised) instead of "
+                        "falling back", wait,
+                    )
+                    await asyncio.sleep(wait + 0.05)
+                    continue
+                # Only fall back if we haven't already started speaking — once
+                # Priya has emitted text, switching providers mid-sentence would
+                # produce gibberish. If we crashed mid-stream, propagate.
+                fb_key = self.fallback_gemini_key or self.gemini_key
+                if not (transient and first_chunk and fb_key):
+                    raise
+                logger.warning(
+                    "groq stream failed (%s) before first chunk; falling back to gemini",
+                    last_exc,
+                )
+                break
         # Reached only on transient failure before any chunk yielded.
         async for chunk in gemini_stream(
             system_message=system_message,

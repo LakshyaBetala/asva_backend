@@ -62,8 +62,16 @@ def _build_payload(
     system_message: str,
     user_message: str,
     generation_config: dict[str, Any] | None = None,
+    model: str = DEFAULT_MODEL,
 ) -> dict[str, Any]:
     cfg = {**DEFAULT_GENERATION_CONFIG, **(generation_config or {})}
+    # Gemini 2.5 models REASON before answering by default — fine for chat,
+    # fatal on a phone line: live call 21c9952b clocked 5.7-6.3s of silent
+    # "thinking" on fallback turns. Zero the budget; a 1-2 sentence telephony
+    # reply gains nothing from deliberation. (2.0-and-earlier models reject
+    # thinkingConfig, so gate on the model name.)
+    if "2.5" in model and "thinkingConfig" not in cfg:
+        cfg["thinkingConfig"] = {"thinkingBudget": 0}
     return {
         "systemInstruction": {"parts": [{"text": system_message}]},
         "contents": [
@@ -92,6 +100,7 @@ async def generate(
         system_message=system_message,
         user_message=user_message,
         generation_config=generation_config,
+        model=model,
     )
 
     owns_client = client is None
@@ -156,6 +165,7 @@ async def stream_generate(
         system_message=system_message,
         user_message=user_message,
         generation_config=generation_config,
+        model=model,
     )
 
     owns_client = client is None
