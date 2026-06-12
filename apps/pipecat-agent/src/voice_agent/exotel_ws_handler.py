@@ -1134,6 +1134,7 @@ def _build_deps_from_env() -> TurnDependencies:
 
     All adapters share one keep-alive httpx client (see _get_shared_http)."""
     from .local_audio import (
+        TTS_DEFAULT_SPEAKER,
         _CartesiaTTSAdapter,
         _ElevenLabsTTSAdapter,
         _GeminiAdapter,
@@ -1206,11 +1207,29 @@ def _build_deps_from_env() -> TurnDependencies:
             alt_base_url=os.environ.get("ALT_LLM_BASE_URL", ""),
             alt_api_key=os.environ.get("ALT_LLM_API_KEY", ""),
             alt_model=os.environ.get("ALT_LLM_MODEL", ""),
+            # LLM_PRIMARY=gemini → Gemini speaks, Groq is the fallback +
+            # extractor. llama-3.3-70b parrots quoted directive examples
+            # and ignores the answer-first rule (calls 43ea487c, 3cfaeed8).
+            gemini_primary=(
+                os.environ.get("LLM_PRIMARY", "").strip().lower() == "gemini"
+                and bool(gemini_key)
+            ),
         )
     else:
         llm_adapter = _GeminiAdapter(api_key=gemini_key, model=gemini_model, client=http)
 
-    if smallest_key:
+    # All-Sarvam voice mode (TTS_PROVIDER=sarvam): one Bulbul v3 speaker
+    # across hi/en/ta — the SPC formula. The hybrid stacks below swap voices
+    # on language flip (smallest meher ↔ bulbul), which leads heard as two
+    # different people on one call; pronunciation complaints on en/hi trace
+    # to meher (2026-06-12 demo feedback).
+    tts_provider_override = os.environ.get("TTS_PROVIDER", "").strip().lower()
+    if tts_provider_override == "sarvam":
+        tts_adapter: Any = _SarvamTTSAdapter(
+            api_key=sarvam_key, client=http,
+            speaker=os.environ.get("SARVAM_TTS_SPEAKER", TTS_DEFAULT_SPEAKER),
+        )
+    elif smallest_key:
         # smallest.ai Lightning v3.1 — one voice across hi/en/ta with native
         # code-mixing + clean English-term pronunciation.
         smallest_adapter = _SmallestTTSAdapter(

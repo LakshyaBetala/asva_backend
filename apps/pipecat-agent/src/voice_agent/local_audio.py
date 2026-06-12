@@ -45,6 +45,7 @@ from .pipeline import HARD_CAP_SECONDS, make_initial_context
 from .qualification import QualificationSlots
 from .r2_client import R2Client, R2Config, R2ConfigError
 from .sarvam_stt import STTResult, transcribe_batch
+from .sarvam_tts import DEFAULT_SPEAKER as TTS_DEFAULT_SPEAKER
 from .sarvam_tts import synthesize as tts_synthesize
 from .cartesia_tts import synthesize as cartesia_synthesize
 from .elevenlabs_tts import synthesize as elevenlabs_synthesize
@@ -88,10 +89,12 @@ class _SarvamSTTAdapter:
 class _SarvamTTSAdapter:
     api_key: str
     client: httpx.AsyncClient
+    speaker: str = TTS_DEFAULT_SPEAKER
 
     async def synth(self, text: str, lang: str) -> bytes:
         result = await tts_synthesize(
-            text=text, lang=lang, api_key=self.api_key, client=self.client
+            text=text, lang=lang, api_key=self.api_key, client=self.client,
+            speaker=self.speaker,
         )
         return result.audio
 
@@ -247,6 +250,13 @@ class _GroqAdapter:
     alt_base_url: str = ""
     alt_api_key: str = ""
     alt_model: str = ""
+    # When True, Gemini handles the conversation turns and Groq becomes the
+    # fallback (extraction stays on Groq either way). Set LLM_PRIMARY=gemini.
+    # Why: llama-3.3-70b parrots quoted directive examples verbatim and
+    # ignores competing instructions (calls 43ea487c, 3cfaeed8); Gemini
+    # 2.5 Flash follows the sales directives and writes far better
+    # Hinglish/Tanglish.
+    gemini_primary: bool = False
 
     async def respond(self, system_message: str, user_message: str) -> str:
         resp = await groq_generate(
@@ -268,6 +278,28 @@ class _GroqAdapter:
         410ms"). When that wait is short, sleeping it out and retrying Groq
         beats switching providers — call 21c9952b paid 5.7-6.3s for Gemini
         fallbacks that a sub-second retry would have avoided."""
+        if self.gemini_primary:
+            g_key = self.fallback_gemini_key or self.gemini_key
+            if g_key:
+                got_gemini_chunk = False
+                try:
+                    async for chunk in gemini_stream(
+                        system_message=system_message,
+                        user_message=user_message,
+                        api_key=g_key,
+                        model=self.fallback_gemini_model or self.gemini_model,
+                        client=self.client,
+                    ):
+                        got_gemini_chunk = True
+                        yield chunk
+                    return
+                except Exception as exc:
+                    if got_gemini_chunk:
+                        # Already speaking — don't switch providers mid-sentence.
+                        raise
+                    logger.warning(
+                        "gemini primary failed (%s); falling back to groq", exc
+                    )
         first_chunk = True
         retried = False
         last_exc: GroqError | None = None
@@ -616,8 +648,12 @@ def _build_deps(env: dict[str, str], http: httpx.AsyncClient) -> TurnDependencie
         r2_reader = _NoOpR2()
         r2_writer = _NoOpR2()
 
+    gemini_primary = env.get("LLM_PRIMARY", "").strip().lower() == "gemini"
     if groq_key:
-        print(f"[LLM: Groq {groq_model}  (extraction: Groq)]")
+        if gemini_primary and gemini_key:
+            print(f"[LLM: Gemini {gemini_model} primary, Groq {groq_model} fallback  (extraction: Groq)]")
+        else:
+            print(f"[LLM: Groq {groq_model}  (extraction: Groq)]")
         # Extract with Groq too — Gemini free tier 429s under live-call rate.
         llm_adapter = _GroqAdapter(
             api_key=groq_key, model=groq_model, client=http,
@@ -628,12 +664,22 @@ def _build_deps(env: dict[str, str], http: httpx.AsyncClient) -> TurnDependencie
             alt_base_url=env.get("ALT_LLM_BASE_URL", ""),
             alt_api_key=env.get("ALT_LLM_API_KEY", ""),
             alt_model=env.get("ALT_LLM_MODEL", ""),
+            gemini_primary=gemini_primary,
         )
     else:
         print(f"[LLM: Gemini {gemini_model}]")
         llm_adapter = _GeminiAdapter(api_key=gemini_key, model=gemini_model, client=http)
 
-    if smallest_key:
+    # All-Sarvam voice mode: one Bulbul v3 speaker across hi/en/ta — the
+    # SPC formula. The hybrid stacks below swap voices on language flip
+    # (smallest meher → bulbul), which leads heard as "two different
+    # people"; TTS_PROVIDER=sarvam pins one identity.
+    tts_provider_override = env.get("TTS_PROVIDER", "").strip().lower()
+    sarvam_speaker = env.get("SARVAM_TTS_SPEAKER", TTS_DEFAULT_SPEAKER)
+    if tts_provider_override == "sarvam" and sarvam_key:
+        print(f"[TTS: Sarvam Bulbul v3 speaker={sarvam_speaker} (single voice, all languages)]")
+        tts_adapter = _SarvamTTSAdapter(api_key=sarvam_key, client=http, speaker=sarvam_speaker)
+    elif smallest_key:
         smallest_adapter = _SmallestTTSAdapter(
             api_key=smallest_key, client=http, voice=smallest_voice,
             model=smallest_model, sample_rate=smallest_rate, speed=smallest_speed,

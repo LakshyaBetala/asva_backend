@@ -34,7 +34,12 @@ from typing import Awaitable, Callable, Iterable, Protocol
 # multiple voice IDs per language; we pick one and never swap so the
 # language transition doesn't double as a voice transition. CRM-configurable
 # per tenant; this default matches our agent persona name (Priya).
-PINNED_VOICE_ID = "bulbul-v3:priya-female"
+#
+# "-2" suffix: while smallest.ai was the live synthesizer, cache misses
+# wrote MEHER audio under the old priya-female keys (the key pins a voice
+# the synthesizer didn't honour). Bumping the id orphans those poisoned
+# entries so every phrase re-synthesizes with the real Bulbul voice.
+PINNED_VOICE_ID = "bulbul-v3:priya-female-2"
 
 
 def phrase_r2_key(*, text: str, lang: str, voice_id: str = PINNED_VOICE_ID) -> str:
