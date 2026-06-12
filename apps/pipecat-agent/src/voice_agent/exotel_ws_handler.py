@@ -34,7 +34,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
 
-from .audio_codec import exotel_pcm_to_wav_for_stt, tts_wav_to_exotel_pcm
+from .audio_codec import apply_gain, exotel_pcm_to_wav_for_stt, tts_wav_to_exotel_pcm
 from .exotel_transport import (
     ExotelError,
     ExotelStreamSession,
@@ -287,6 +287,24 @@ _OUT_FRAME_BYTES = 1600
 def _audio_dur_sec(pcm: bytes, sample_rate: int) -> float:
     """Playback duration of raw 16-bit mono PCM."""
     return (len(pcm) // 2) / sample_rate
+
+
+# Streaming TTS holds a persistent WS to Sarvam; deps are rebuilt per call,
+# so the instance lives at module scope and is shared across calls.
+_streaming_tts: Any = None
+
+
+def _get_streaming_tts(api_key: str, speaker: str):
+    global _streaming_tts
+    if _streaming_tts is None or _streaming_tts.speaker != speaker:
+        from .sarvam_tts_ws import SarvamStreamingTTS
+
+        _streaming_tts = SarvamStreamingTTS(
+            api_key=api_key,
+            speaker=speaker,
+            sample_rate=EXOTEL_STREAM_SAMPLE_RATE,
+        )
+    return _streaming_tts
 
 
 async def _send_pcm_chunked(session: ExotelStreamSession, pcm: bytes) -> None:
@@ -836,31 +854,47 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                             # the trailing consonant of one sentence blends
                             # into the opening of the next on the cellular
                             # line, which leads complained about.
+                            # Streaming TTS sends one sentence as MANY raw-PCM
+                            # events; only the first carries text — pads apply
+                            # at sentence starts, never mid-sentence (a pad
+                            # between chunks is an audible stutter).
+                            sentence_start = bool(event.text)
                             current_lang = (
                                 active.ctx.language_state.current.value
                                 if active.ctx.language_state else "hi-IN"
                             )
                             if first_chunk_of_turn:
                                 pad_ms = EXOTEL_LEAD_SILENCE_MS
+                            elif not sentence_start:
+                                pad_ms = 0
                             elif current_lang == "ta-IN":
                                 pad_ms = EXOTEL_SENTENCE_GAP_MS_TA
                             else:
                                 pad_ms = EXOTEL_SENTENCE_GAP_MS
                             first_chunk_of_turn = False
-                            out_pcm = tts_wav_to_exotel_pcm(
-                                event.audio, EXOTEL_STREAM_SAMPLE_RATE,
-                                gain=EXOTEL_TTS_GAIN, lead_silence_ms=pad_ms,
-                            )
+                            if event.is_raw_pcm:
+                                out_pcm = apply_gain(event.audio, EXOTEL_TTS_GAIN)
+                                if pad_ms > 0:
+                                    pad = bytes(
+                                        2 * int(EXOTEL_STREAM_SAMPLE_RATE * pad_ms / 1000)
+                                    )
+                                    out_pcm = pad + out_pcm
+                            else:
+                                out_pcm = tts_wav_to_exotel_pcm(
+                                    event.audio, EXOTEL_STREAM_SAMPLE_RATE,
+                                    gain=EXOTEL_TTS_GAIN, lead_silence_ms=pad_ms,
+                                )
                             await _send_pcm_chunked(session, out_pcm)
                             speaking_until = (
                                 max(speaking_until, time.monotonic())
                                 + _audio_dur_sec(out_pcm, EXOTEL_STREAM_SAMPLE_RATE)
                             )
-                            _clog(
-                                call_id, "PRIYA",
-                                f"[{'cache' if event.used_cache else 'tts'} "
-                                f"s{event.sentence_idx}] {event.text}",
-                            )
+                            if sentence_start:
+                                _clog(
+                                    call_id, "PRIYA",
+                                    f"[{'cache' if event.used_cache else 'tts'} "
+                                    f"s{event.sentence_idx}] {event.text}",
+                                )
                         except Exception:
                             logger.exception("audio chunk send failed")
                     elif isinstance(event, TurnCompleteEvent):
@@ -1225,10 +1259,22 @@ def _build_deps_from_env() -> TurnDependencies:
     # to meher (2026-06-12 demo feedback).
     tts_provider_override = os.environ.get("TTS_PROVIDER", "").strip().lower()
     if tts_provider_override == "sarvam":
-        tts_adapter: Any = _SarvamTTSAdapter(
-            api_key=sarvam_key, client=http,
-            speaker=os.environ.get("SARVAM_TTS_SPEAKER", TTS_DEFAULT_SPEAKER),
-        )
+        speaker = os.environ.get("SARVAM_TTS_SPEAKER", TTS_DEFAULT_SPEAKER)
+        if os.environ.get("SARVAM_TTS_STREAMING", "1") != "0":
+            # Bulbul v3 streaming WS: ~100-250ms to first audio vs
+            # 1.8-2.6s REST (probes 2026-06-12). One process-wide
+            # instance — the connection is reused across turns and
+            # calls; warm it now so setup (~0.5-1.5s) never lands on
+            # the call's first reply.
+            tts_adapter: Any = _get_streaming_tts(sarvam_key, speaker)
+            try:
+                asyncio.ensure_future(tts_adapter.warmup())
+            except RuntimeError:
+                pass  # no running loop (tests) — first sentence connects
+        else:
+            tts_adapter = _SarvamTTSAdapter(
+                api_key=sarvam_key, client=http, speaker=speaker,
+            )
     elif smallest_key:
         # smallest.ai Lightning v3.1 — one voice across hi/en/ta with native
         # code-mixing + clean English-term pronunciation.

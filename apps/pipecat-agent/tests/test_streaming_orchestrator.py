@@ -495,3 +495,100 @@ class TestLeadQuestionDirective:
             intent="normal",
         )
         assert "Answer THAT first" not in msg
+
+
+# -- Streaming TTS sentence emission (Bulbul v3 WS, 2026-06-12) ---------------
+
+class TestSentenceAudioEvents:
+    """One sentence becomes many raw-PCM events with a streaming TTS,
+    one full-WAV event otherwise; cache hits short-circuit both."""
+
+    @staticmethod
+    def _deps(tts, cached=None):
+        from types import SimpleNamespace
+
+        puts = []
+
+        class R2:
+            async def get(self, key):
+                return cached
+
+            async def put(self, key, data, content_type):
+                puts.append((key, data, content_type))
+
+        r2 = R2()
+        deps = SimpleNamespace(
+            tts=tts, r2_reader=r2, r2_writer=r2, voice_id="test-voice"
+        )
+        return deps, puts
+
+    def _run(self, deps):
+        import asyncio
+        from voice_agent.streaming_orchestrator import _sentence_audio_events
+
+        async def go():
+            stats: dict = {}
+            events = [
+                ev
+                async for ev in _sentence_audio_events(
+                    spoken="Endha area sir?",
+                    lang="ta-IN",
+                    deps=deps,
+                    sentence_idx=0,
+                    stats=stats,
+                )
+            ]
+            return events, stats
+
+        return asyncio.run(go())
+
+    def test_streaming_tts_yields_raw_chunks_and_writes_back(self):
+        from types import SimpleNamespace
+
+        class StreamingTTS:
+            sample_rate = 8000
+
+            async def synth_stream(self, text, lang):
+                yield b"\x01\x02" * 100
+                yield b"\x03\x04" * 100
+
+        deps, puts = self._deps(StreamingTTS())
+        events, stats = self._run(deps)
+
+        assert len(events) == 2
+        assert all(ev.is_raw_pcm for ev in events)
+        assert events[0].text == "Endha area sir?"  # sentence start marker
+        assert events[1].text == ""  # continuation chunk
+        assert stats["used_cache"] is False
+        # Assembled WAV written back for next-call cache hits.
+        assert len(puts) == 1
+        assert puts[0][1][:4] == b"RIFF"
+
+    def test_cache_hit_short_circuits_streaming(self):
+        class StreamingTTS:
+            sample_rate = 8000
+
+            async def synth_stream(self, text, lang):
+                raise AssertionError("must not synthesize on cache hit")
+                yield b""
+
+        deps, puts = self._deps(StreamingTTS(), cached=b"RIFFcachedwav")
+        events, stats = self._run(deps)
+
+        assert len(events) == 1
+        assert events[0].used_cache is True
+        assert events[0].is_raw_pcm is False
+        assert stats["used_cache"] is True
+        assert puts == []
+
+    def test_non_streaming_tts_keeps_single_event_path(self):
+        class RestTTS:
+            async def synth(self, text, lang):
+                return b"RIFFfakewav"
+
+        deps, puts = self._deps(RestTTS())
+        events, stats = self._run(deps)
+
+        assert len(events) == 1
+        assert events[0].is_raw_pcm is False
+        assert events[0].audio == b"RIFFfakewav"

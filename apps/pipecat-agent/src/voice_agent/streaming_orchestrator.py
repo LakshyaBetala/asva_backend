@@ -33,7 +33,8 @@ from .language_state import (
 )
 from .industry.real_estate import LOCALITIES, LOCALITY_ALIASES
 from .pain_library import pick_pain_hypothesis
-from .phrase_cache import PINNED_VOICE_ID, load_or_synthesize_phrase
+from .phrase_cache import PINNED_VOICE_ID, load_or_synthesize_phrase, phrase_r2_key
+from .sarvam_tts_ws import pcm16_to_wav
 from .qualification import QualificationSlots, extract_slots
 from .prompts import build_system_message, load_priya_prompt
 from .sarvam_stt import STTResult as _STTResult
@@ -77,11 +78,87 @@ class R2Writer(Protocol):
 
 @dataclass
 class AudioChunkEvent:
-    """One sentence of Priya's response, synthesized and ready to play."""
+    """A piece of Priya's response, synthesized and ready to play.
+
+    With the REST TTS path this is one full sentence (WAV). With the
+    streaming TTS path one sentence arrives as SEVERAL events whose
+    `audio` is raw PCM16 at the telephony rate (`is_raw_pcm=True`) —
+    the first one lands ~100ms after the text is ready instead of after
+    the whole clip is synthesized. `text` is set on the first chunk of
+    a sentence and empty on its continuation chunks.
+    """
     audio: bytes
     text: str
     sentence_idx: int
     used_cache: bool
+    is_raw_pcm: bool = False
+
+
+async def _sentence_audio_events(
+    *,
+    spoken: str,
+    lang: str,
+    deps,
+    sentence_idx: int,
+    stats: dict,
+):
+    """Yield playable AudioChunkEvents for one prepared sentence.
+
+    Streaming-capable TTS (`synth_stream`) forwards raw PCM chunks the
+    moment they arrive — first audio in ~100ms instead of after the full
+    clip renders. Cache hits short-circuit either way; a streamed
+    sentence is assembled and written back so the same line is a cache
+    hit on the next call. Sets stats["used_cache"]."""
+    streamer = getattr(deps.tts, "synth_stream", None)
+    if streamer is None:
+        phrase_result = await load_or_synthesize_phrase(
+            text=spoken,
+            lang=lang,
+            r2_reader=deps.r2_reader,
+            r2_writer=deps.r2_writer,
+            synthesize=lambda t, l: deps.tts.synth(t, l),
+            voice_id=deps.voice_id,
+        )
+        stats["used_cache"] = phrase_result.used_cache
+        yield AudioChunkEvent(
+            audio=phrase_result.audio, text=spoken,
+            sentence_idx=sentence_idx, used_cache=phrase_result.used_cache,
+        )
+        return
+
+    key = phrase_r2_key(text=spoken, lang=lang, voice_id=deps.voice_id)
+    cached = await deps.r2_reader.get(key)
+    if cached is not None:
+        stats["used_cache"] = True
+        yield AudioChunkEvent(
+            audio=cached, text=spoken,
+            sentence_idx=sentence_idx, used_cache=True,
+        )
+        return
+
+    stats["used_cache"] = False
+    pcm_parts: list[bytes] = []
+    first = True
+    async for chunk in streamer(spoken, lang):
+        pcm_parts.append(chunk)
+        yield AudioChunkEvent(
+            audio=chunk,
+            # text marks the start of a sentence (logging + pads);
+            # continuation chunks carry no text.
+            text=spoken if first else "",
+            sentence_idx=sentence_idx,
+            used_cache=False,
+            is_raw_pcm=True,
+        )
+        first = False
+    if pcm_parts:
+        try:
+            rate = getattr(deps.tts, "sample_rate", 8000)
+            await deps.r2_writer.put(
+                key, pcm16_to_wav(b"".join(pcm_parts), rate), "audio/wav"
+            )
+        except Exception:
+            logger.debug("phrase write-back failed", exc_info=True)
 
 
 @dataclass
@@ -697,28 +774,22 @@ async def run_turn_streaming(
                     first_sentence_done = True
 
                 tts_t0 = time.monotonic()
-                phrase_result = await load_or_synthesize_phrase(
-                    text=spoken,
-                    lang=transition.current_language.value,
-                    r2_reader=deps.r2_reader,
-                    r2_writer=deps.r2_writer,
-                    synthesize=lambda t, l: deps.tts.synth(t, l),
-                    voice_id=deps.voice_id,
-                )
-                if sentence_idx == 0:
-                    timings["tts_first_sentence_ms"] = int(
-                        (time.monotonic() - tts_t0) * 1000
-                    )
-                if phrase_result.used_cache:
-                    cache_hits += 1
-
                 full_text_parts.append(spoken)
-                yield AudioChunkEvent(
-                    audio=phrase_result.audio,
-                    text=spoken,
+                sent_stats: dict = {}
+                async for audio_ev in _sentence_audio_events(
+                    spoken=spoken,
+                    lang=transition.current_language.value,
+                    deps=deps,
                     sentence_idx=sentence_idx,
-                    used_cache=phrase_result.used_cache,
-                )
+                    stats=sent_stats,
+                ):
+                    if "tts_first_sentence_ms" not in timings:
+                        timings["tts_first_sentence_ms"] = int(
+                            (time.monotonic() - tts_t0) * 1000
+                        )
+                    yield audio_ev
+                if sent_stats.get("used_cache"):
+                    cache_hits += 1
                 sentence_idx += 1
 
             sentence_buffer = sentences[-1]  # keep incomplete tail
@@ -735,28 +806,22 @@ async def run_turn_streaming(
                 (time.monotonic() - llm_t0) * 1000
             )
         tts_t0 = time.monotonic()
-        phrase_result = await load_or_synthesize_phrase(
-            text=tail,
-            lang=transition.current_language.value,
-            r2_reader=deps.r2_reader,
-            r2_writer=deps.r2_writer,
-            synthesize=lambda t, l: deps.tts.synth(t, l),
-            voice_id=deps.voice_id,
-        )
-        if sentence_idx == 0:
-            timings["tts_first_sentence_ms"] = int(
-                (time.monotonic() - tts_t0) * 1000
-            )
-        if phrase_result.used_cache:
-            cache_hits += 1
-
         full_text_parts.append(tail)
-        yield AudioChunkEvent(
-            audio=phrase_result.audio,
-            text=tail,
+        tail_stats: dict = {}
+        async for audio_ev in _sentence_audio_events(
+            spoken=tail,
+            lang=transition.current_language.value,
+            deps=deps,
             sentence_idx=sentence_idx,
-            used_cache=phrase_result.used_cache,
-        )
+            stats=tail_stats,
+        ):
+            if "tts_first_sentence_ms" not in timings:
+                timings["tts_first_sentence_ms"] = int(
+                    (time.monotonic() - tts_t0) * 1000
+                )
+            yield audio_ev
+        if tail_stats.get("used_cache"):
+            cache_hits += 1
         sentence_idx += 1
 
     timings["llm_ms"] = int((time.monotonic() - llm_t0) * 1000)
