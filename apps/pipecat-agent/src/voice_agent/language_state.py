@@ -91,6 +91,49 @@ _TAMIL_SCRIPT_RE = re.compile(r"[஀-௿]")
 _DEVANAGARI_RE = re.compile(r"[ऀ-ॿ]")
 
 
+# Short acknowledgement tokens across the scripts Sarvam's streaming STT
+# actually emits for them. A lead's "hmm / ok / haan / theek hai" gets
+# transcribed in whatever script the model's language guess picked THAT
+# utterance — call 56e606ca logged "ம்." (Tamil), "ઓકે."/"હા." (Gujarati),
+# "ఓకే అండి." (Telugu) for what was plain Hindi/English backchannel. These
+# must never count as a language signal (and intent-wise they are
+# backchannels — see streaming_orchestrator._is_backchannel).
+BACKCHANNEL_ACK_TOKENS: frozenset[str] = frozenset({
+    # Roman
+    "acha", "achha", "accha", "achchha", "achaa", "haan", "han", "haa",
+    "hmm", "hm", "mm", "mmm", "hmmm", "ok", "okay", "okk", "theek", "thik",
+    "sahi", "right", "ji", "sari", "seri", "aama", "yes", "yeah", "yep",
+    "bilkul", "sure", "fine", "hello", "haanji",
+    # Devanagari
+    "हाँ", "हां", "हा", "जी", "ठीक", "है", "अच्छा", "अच्छी", "ओके", "ओक",
+    "हूँ", "हम्म", "सही", "बिल्कुल", "सर", "मैडम",
+    # Tamil
+    "ம்", "ம்ம்", "ஓகே", "ஒகே", "சரி", "ஆமா", "ஆமாம்", "ஹா", "சார்", "சர்",
+    # Gujarati
+    "ઓકે", "હા", "ઠીક", "સારું", "જી",
+    # Telugu
+    "ఓకే", "ఒకే", "సరే", "హా", "అవును", "అండి", "సర్",
+    # Kannada / Malayalam (same misdetect class)
+    "ಸರಿ", "ಹೌದು", "ഓകെ", "ശരി",
+})
+
+
+def is_bare_ack(text: str) -> bool:
+    """True when the utterance is ONLY acknowledgement tokens (any script).
+
+    "ઓકે." / "अच्छा ठीक है।" / "hmm ok" → True. Anything carrying real
+    content ("ठीक है, Saturday chalega") → False.
+    """
+    # \w alone would strip Indic combining marks (viramas/matras) and shred
+    # "अच्छा" into "अच छा" — keep the full Indic blocks (U+0900-U+0D7F)
+    # intact and only punctuation becomes a separator. The danda (।/॥) lives
+    # INSIDE the Devanagari block, so it needs its own separator rule.
+    words = re.sub(r"[^\w\sऀ-ൿ]|[।॥]", " ", text).split()
+    if not words or len(words) > 4:
+        return False
+    return all(w.lower() in BACKCHANNEL_ACK_TOKENS for w in words)
+
+
 def _script_override(text: str) -> Lang | None:
     """Detect language from Unicode script in the transcript.
 
@@ -244,13 +287,21 @@ class LanguageState:
         # This catches the very common case of Sarvam tagging Tamil audio
         # as hi-IN when the request hint was hi-IN (the script in the text
         # tells the truth even when the label lies).
+        #
+        # GATED for short utterances: the streaming STT hallucinates a random
+        # script for one-word backchannels ("ம்." for "hmm", "हाँ" for an
+        # English "yeah") — call 56e606ca went Tanglish off a single "ம்.".
+        # A real language switch always arrives as a full sentence.
         script = _script_override(utt.text)
         if script is not None:
-            if script != self.current:
+            if script == self.current:
+                # Same as current — reset any drifting pending counter and stop.
+                self.pending_lang = None
+                self.pending_count = 0
+                return Transition(self.current, False, "none", None)
+            if self._word_count(utt.text) >= 2 and not is_bare_ack(utt.text):
                 return self._flip(script, "explicit")
-            # Same as current — reset any drifting pending counter and stop.
-            self.pending_lang = None
-            self.pending_count = 0
+            # Foreign-script bare ack / one-worder: STT misdetect, keep state.
             return Transition(self.current, False, "none", None)
 
         # Marker-token override: if morphology unambiguously identifies a

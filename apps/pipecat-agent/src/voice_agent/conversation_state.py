@@ -121,6 +121,12 @@ class ConversationState:
     # complaint). The next turn MUST close — no more discovery questions.
     close_armed: bool = False
 
+    # Consecutive turns where the lead's audio came through garbled (wrong
+    # script for the call language / line noise) and Priya asked them to
+    # repeat. Capped at 2 — after that we stop re-prompting and let the LLM
+    # do its best, so a noisy line never becomes a "can you repeat?" loop.
+    repeat_request_count: int = 0
+
     # Phase entry timestamps for telemetry + debugging.
     phase_entered_at: dict[Phase, float] = field(default_factory=dict)
 

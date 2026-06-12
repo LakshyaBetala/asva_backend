@@ -214,3 +214,57 @@ def test_response_hint_returns_current():
     assert get_response_language_hint(state) == Lang.EN
     state.current = Lang.TA
     assert get_response_language_hint(state) == Lang.TA
+
+
+# ---------------------------------------------------------------------------
+# Script-override gating: streaming STT hallucinates a random script for
+# one-word backchannels (call 56e606ca: "ம்." for "hmm" flipped an English
+# call into Tanglish). A single foreign-script ack must NEVER flip state;
+# a full foreign-script sentence still flips instantly.
+# ---------------------------------------------------------------------------
+
+class TestScriptOverrideGating:
+    def test_tamil_script_bare_ack_does_not_flip(self):
+        state = LanguageState.initial(Lang.EN)
+        t = state.update(utt("ம்.", Lang.TA, conf=1.0))
+        assert t.switched is False
+        assert state.current == Lang.EN
+
+    def test_devanagari_bare_ack_does_not_flip(self):
+        state = LanguageState.initial(Lang.EN)
+        t = state.update(utt("अच्छा ठीक है।", Lang.HI, conf=1.0))
+        assert t.switched is False
+        assert state.current == Lang.EN
+
+    def test_gujarati_ack_does_not_flip(self):
+        # Gujarati isn't a supported Lang at all — must be a clean no-op.
+        state = LanguageState.initial(Lang.HI)
+        t = state.update(utt("ઓકે.", None, conf=1.0))
+        assert t.switched is False
+        assert state.current == Lang.HI
+
+    def test_full_tamil_script_sentence_still_flips_instantly(self):
+        state = LanguageState.initial(Lang.HI)
+        t = state.update(utt("எனக்கு அண்ணா நகர்ல வீடு வேணும்", Lang.TA, conf=1.0))
+        assert t.switched is True
+        assert state.current == Lang.TA
+
+    def test_full_devanagari_sentence_still_flips_instantly(self):
+        state = LanguageState.initial(Lang.EN)
+        t = state.update(utt("मुझे किराये पे दो बीएचके चाहिए", Lang.HI, conf=1.0))
+        assert t.switched is True
+        assert state.current == Lang.HI
+
+
+class TestIsBareAck:
+    def test_multi_script_acks(self):
+        from voice_agent.language_state import is_bare_ack
+        for text in ("ம்.", "ஓகே", "ઓકે.", "હા.", "ఓకే అండి.", "अच्छा ठीक है।",
+                     "hmm", "ok ok", "haan ji"):
+            assert is_bare_ack(text), text
+
+    def test_content_is_not_an_ack(self):
+        from voice_agent.language_state import is_bare_ack
+        for text in ("ठीक है, Saturday chalega", "Budget is around",
+                     "महिंद्रा सिटी।", "Anna Nagar mein"):
+            assert not is_bare_ack(text), text

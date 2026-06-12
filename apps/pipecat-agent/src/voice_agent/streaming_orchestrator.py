@@ -24,7 +24,13 @@ from dataclasses import dataclass, field
 from typing import AsyncIterator, Mapping, Optional, Protocol
 
 from .conversation_state import ConversationState, Phase, system_prompt_addendum
-from .language_state import Lang, LanguageState, STTUtterance, Transition
+from .language_state import (
+    Lang,
+    LanguageState,
+    STTUtterance,
+    Transition,
+    is_bare_ack,
+)
 from .pain_library import pick_pain_hypothesis
 from .phrase_cache import PINNED_VOICE_ID, load_or_synthesize_phrase
 from .qualification import QualificationSlots, extract_slots
@@ -447,6 +453,28 @@ async def run_turn_streaming(
                 break
 
     if not raw_transcript or is_echo:
+        # Streaming STT only hands us non-empty finals, so on that path a
+        # collapse to "(silence)" means we transcribed Priya's own echo.
+        # Saying ANYTHING here is wrong — she just spoke (call 56e606ca
+        # opened with a cached "Got it." aimed at her own intro echo). Skip
+        # the turn silently; the lead's real words arrive as the next final.
+        if pre_transcribed is not None:
+            yield TurnCompleteEvent(
+                lead_text="(silence)",
+                lead_lang=ctx.language_state.current.value,
+                lead_confidence=0.0,
+                priya_full_text="",
+                language_transition=Transition(
+                    current_language=ctx.language_state.current,
+                    switched=False, trigger="none", bridge_phrase=None,
+                ),
+                slots=prior_slots,
+                latency_ms={"total_ms": int((time.monotonic() - t0) * 1000)},
+                total_sentences=0,
+                cache_hits=0,
+                lead_intent="silence",
+            )
+            return
         stt_result = _STTResult(
             transcript="(silence)",
             language_code=stt_result.language_code or "hi-IN",
@@ -467,6 +495,59 @@ async def run_turn_streaming(
         elapsed_sec=ctx.elapsed(),
         buying_confidence=prior_slots.buying_confidence,
     )
+
+    # ---- 2b. Inaudible / garbled audio → ask to repeat (trust beats guessing)
+    # Wrong-script short utterances and line noise mean we did NOT hear the
+    # lead. The honest move — what a human caller does — is a quick "sorry,
+    # could you repeat?". Deterministic (no LLM): instant, never invents an
+    # answer to words the lead didn't say. Capped at 2 consecutive re-prompts
+    # so a genuinely noisy line doesn't loop; after that the LLM does its best.
+    cur_lang = transition.current_language.value
+    if (
+        stt_result.transcript != "(silence)"
+        and is_garbled_utterance(stt_result.transcript, cur_lang)
+        and ctx.conversation_state.repeat_request_count < 2
+    ):
+        ctx.conversation_state.repeat_request_count += 1
+        repeat_line = _REPEAT_LINES.get(cur_lang, _REPEAT_LINES["hi-IN"])
+        # prepare_intro_for_tts = pack + Tamil pacing WITHOUT the name-echo
+        # sanitiser (which could eat the leading "Sorry sir" ack).
+        spoken = prepare_intro_for_tts(repeat_line, cur_lang, deps.pronunciation_pack)
+        tts_t0 = time.monotonic()
+        phrase_result = await load_or_synthesize_phrase(
+            text=spoken,
+            lang=cur_lang,
+            r2_reader=deps.r2_reader,
+            r2_writer=deps.r2_writer,
+            synthesize=lambda t, l: deps.tts.synth(t, l),
+            voice_id=deps.voice_id,
+        )
+        timings["tts_first_sentence_ms"] = int((time.monotonic() - tts_t0) * 1000)
+        timings["total_ms"] = int((time.monotonic() - t0) * 1000)
+        ctx.conversation_state.record_priya_turn(spoken)
+        ctx.phrase_cache_hits += 1 if phrase_result.used_cache else 0
+        ctx.turn_idx += 1
+        yield AudioChunkEvent(
+            audio=phrase_result.audio, text=spoken,
+            sentence_idx=0, used_cache=phrase_result.used_cache,
+        )
+        yield TurnCompleteEvent(
+            lead_text=stt_result.transcript,
+            lead_lang=cur_lang,
+            lead_confidence=stt_result.confidence,
+            priya_full_text=spoken,
+            language_transition=transition,
+            slots=prior_slots,
+            latency_ms=timings,
+            total_sentences=1,
+            cache_hits=1 if phrase_result.used_cache else 0,
+            lead_intent="garbled",
+        )
+        return
+    if stt_result.transcript != "(silence)" and not is_garbled_utterance(
+        stt_result.transcript, cur_lang
+    ):
+        ctx.conversation_state.repeat_request_count = 0
 
     # ---- 3. Language flip — no bridge phrase, just switch silently ------
 
@@ -547,7 +628,14 @@ async def run_turn_streaming(
     # so it stops re-asking already-answered questions. Skip pure silence /
     # backchannels which add nothing and crowd the window.
     if intent not in ("silence", "backchannel") and stt_result.transcript != "(silence)":
-        ctx.conversation_state.record_lead_turn(stt_result.transcript)
+        # Mark cut-off fragments in the rolling history. Without the marker
+        # the LLM treats "Budget is around" as a complete statement and a
+        # later turn may literally CONTINUE it — call 56e606ca produced a
+        # reply starting mid-sentence ("Tak kiraye ke liye...").
+        recorded = stt_result.transcript
+        if transcript_unfinished(recorded):
+            recorded = recorded.rstrip() + " … (cut off mid-sentence)"
+        ctx.conversation_state.record_lead_turn(recorded)
 
     user_msg = _format_user_message(
         stt_result.transcript, prior_slots, ctx.conversation_state,
@@ -672,12 +760,41 @@ async def run_turn_streaming(
 
     timings["llm_ms"] = int((time.monotonic() - llm_t0) * 1000)
 
+    # Dead-air guard: if the whole reply sanitised away to nothing (or the
+    # LLM stream yielded zero content — seen when a fallback model spends its
+    # token budget on reasoning), the lead must NEVER hear silence. One short
+    # neutral continue-prompt is safe in any call state. Skipped when the
+    # turn is ending anyway — "Ji, boliye?" followed by a hangup is worse.
+    if sentence_idx == 0 and not end_call:
+        cont = _CONTINUE_LINES.get(
+            transition.current_language.value, _CONTINUE_LINES["hi-IN"]
+        )
+        phrase_result = await load_or_synthesize_phrase(
+            text=cont,
+            lang=transition.current_language.value,
+            r2_reader=deps.r2_reader,
+            r2_writer=deps.r2_writer,
+            synthesize=lambda t, l: deps.tts.synth(t, l),
+            voice_id=deps.voice_id,
+        )
+        if phrase_result.used_cache:
+            cache_hits += 1
+        full_text_parts.append(cont)
+        yield AudioChunkEvent(
+            audio=phrase_result.audio, text=cont,
+            sentence_idx=0, used_cache=phrase_result.used_cache,
+        )
+        sentence_idx = 1
+
     # ---- 6. Wait for slot extraction -----------------------------------
     new_slots = await slots_task
 
     # ---- 7. Update conversation state ----------------------------------
     priya_full = " ".join(full_text_parts)
-    ctx.conversation_state.record_priya_turn(priya_full)
+    if priya_full:
+        # An empty Priya turn in the window breaks the lead↔Priya interleave
+        # the history formatter relies on — record only real speech.
+        ctx.conversation_state.record_priya_turn(priya_full)
     ctx.phrase_cache_hits += cache_hits
     ctx.turn_idx += 1
 
@@ -767,6 +884,91 @@ def _looks_like_line_noise(text: str, *, lang: str) -> bool:
     if len(t) < 4 and not any(c.isalnum() for c in t):
         return True
     return False
+
+
+# Per-language "home" script. Any OTHER Indic script in a short utterance is
+# an STT misfire on unclear audio, not a real language switch — the streaming
+# model picks a random script for mumbled audio (call 56e606ca: Gujarati
+# "ઓકે", Telugu "ఓకే అండి" on a Hindi call).
+_HOME_SCRIPT_RE: dict[str, re.Pattern[str]] = {
+    "hi-IN": re.compile(r"[ऀ-ॿ]"),
+    "ta-IN": re.compile(r"[஀-௿]"),
+}
+
+
+def _wrong_script_short(text: str, lang: str) -> bool:
+    """True when a SHORT utterance carries Indic script that cannot belong to
+    the pinned call language — almost certainly garbled/unclear audio."""
+    t = (text or "").strip()
+    if not t or len(t.split()) > 4:
+        return False
+    indic_chars = _INDIC_SCRIPT_RE.findall(t)
+    if not indic_chars:
+        return False
+    home = _HOME_SCRIPT_RE.get(lang)
+    if home is None:  # en-IN: any Indic script on a short utterance is noise
+        return True
+    return any(not home.match(c) for c in indic_chars)
+
+
+def is_garbled_utterance(text: str, lang: str) -> bool:
+    """The audio was probably inaudible/unclear: wrong-script short utterance
+    or classic line noise. Used to trigger a polite 'can you repeat?' instead
+    of letting the LLM guess — guessing wrong is what burns trust."""
+    if is_bare_ack(text):
+        return False  # an ack is meaningful even in the wrong script
+    return _wrong_script_short(text, lang) or _looks_like_line_noise(text, lang=lang)
+
+
+# Words that almost never END a finished thought. Sarvam's streaming VAD can
+# finalize mid-breath ("Budget is around" — call 56e606ca) and it auto-
+# punctuates, so trailing punctuation alone can't be trusted as "complete".
+_DANGLING_END_WORDS: frozenset[str] = frozenset({
+    # English
+    "around", "about", "is", "are", "was", "and", "or", "but", "the", "a",
+    "an", "my", "your", "their", "our", "in", "of", "to", "for", "so",
+    "very", "with", "than", "like",
+    # Romanized Hindi
+    "mein", "ke", "ki", "ka", "se", "ko", "aur", "ya", "kya", "main",
+    "mai", "toh", "par", "wala", "wali", "liye",
+    # Devanagari
+    "में", "के", "की", "का", "से", "को", "और", "या", "क्या", "मैं", "तो",
+    "पर", "लिए",
+    # Tamil romanized connectors
+    "la", "ku", "oda", "kitta",
+})
+
+
+def transcript_unfinished(text: str) -> bool:
+    """Heuristic: the lead was probably cut off mid-sentence.
+
+    Either no terminal punctuation at all, or the last word is a dangling
+    connective ("around", "ke", "मैं") even when Sarvam auto-punctuated.
+    The WS handler uses this to hold the turn a little longer; the prompt
+    uses it to ask the lead to finish instead of answering a fragment.
+    """
+    t = (text or "").strip()
+    if not t or is_bare_ack(t):
+        return False
+    last = t.rstrip(".?!।,…").split()[-1].lower() if t.rstrip(".?!।,…").split() else ""
+    if last in _DANGLING_END_WORDS:
+        return True
+    return not t.endswith((".", "?", "!", "।"))
+
+
+# Deterministic outlier lines, per language. Synthesised via the phrase cache
+# so repeats are free. Kept SHORT and context-free on purpose — they are safe
+# in any state of the call (unlike the old canned buy-or-rent fallback).
+_REPEAT_LINES = {
+    "ta-IN": "Sorry sir, line clear-aa illa... konjam thirumba sollunga?",
+    "en-IN": "Sorry, the line wasn't clear — could you say that once more?",
+    "hi-IN": "Sorry sir, awaaz clear nahin aayi — ek baar phir boliye?",
+}
+_CONTINUE_LINES = {
+    "ta-IN": "Sollunga sir?",
+    "en-IN": "Yes, please go ahead?",
+    "hi-IN": "Ji, boliye?",
+}
 
 
 def _text_overlap(a: str, b: str) -> float:
@@ -927,7 +1129,14 @@ def _is_backchannel(text: str) -> bool:
     """True when a SHORT utterance is only acknowledgment ("acha", "haan haan",
     "theek hai", "ok ji") — the lead is passively listening, not answering and
     not asking to close. Anything with real content (e.g. "theek hai bhej do")
-    is NOT a backchannel."""
+    is NOT a backchannel.
+
+    is_bare_ack covers the native-script forms the streaming STT emits for
+    mumbled acks ("अच्छा ठीक है।", "ઓકે.", "ఓకే అండి.") — call 56e606ca
+    classified those as intent=normal "answers" and the LLM re-asked the same
+    visit-day question three times trying to make sense of them."""
+    if is_bare_ack(text):
+        return True
     cleaned = re.sub(r"[^\w\s]", " ", text.lower()).strip()
     words = cleaned.split()
     if not words or len(words) > 4:
@@ -1043,16 +1252,29 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
     # unfinished, prompt them to continue instead of guessing.
     _lt = (lead_text or "").strip()
     if (
-        len(_lt.split()) >= 6
-        and not _lt.endswith((".", "?", "!", "।"))
+        len(_lt.split()) >= 3
+        and transcript_unfinished(_lt)
         and intent in ("normal", "backchannel")
     ):
         parts.append(
             '[The lead\'s line may be CUT OFF mid-sentence (phone STT '
             'flushes on pauses). If it reads incomplete, do NOT answer the '
-            'half-question and do NOT change topic — invite them to finish '
-            'in 2-4 words: "Haan sir, boliye?" / "Yes sir, tell me?" / '
-            '"Sollunga sir?". If it reads complete, reply normally.]'
+            'half-question, do NOT complete their sentence for them, and do '
+            'NOT change topic — invite them to finish in 2-4 words: "Haan '
+            'sir, boliye?" / "Yes sir, tell me?" / "Sollunga sir?". If it '
+            'reads complete, reply normally.]'
+        )
+    elif intent == "normal" and len(_lt.split()) >= 5:
+        # Longer utterances that survived the deterministic garble check can
+        # still be mis-transcribed nonsense ("क्या मैंने तो तू नहीं चेंज
+        # किया?"). Give the LLM explicit permission to ask for a repeat
+        # instead of bluffing an answer — bluffing is what kills trust.
+        parts.append(
+            '[If the lead\'s line reads as NONSENSE / random words that '
+            'don\'t fit the conversation, the phone audio was garbled. Do '
+            'NOT guess or change topic — ask them to repeat once, briefly: '
+            '"Sorry sir, awaaz clear nahin aayi — ek baar phir boliye?" '
+            '(match the call language). If it makes sense, reply normally.]'
         )
 
     if turn == 0:

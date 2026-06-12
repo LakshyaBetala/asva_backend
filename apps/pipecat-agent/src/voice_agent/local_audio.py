@@ -321,6 +321,12 @@ class _GroqAdapter:
             if "gpt-oss" in self.alt_model:
                 # gpt-oss is a reasoning model — cap deliberation for telephony.
                 cfg["reasoning_effort"] = "low"
+                # Reasoning tokens COUNT toward max_tokens on gpt-oss; the
+                # default 120 can be consumed entirely by deliberation and
+                # return ZERO content (the lead hears silence). Raise the
+                # ceiling — brevity stays enforced by the prompt and the
+                # orchestrator's 2-sentence cap.
+                cfg["max_tokens"] = 480
             got_chunk = False
             try:
                 async for chunk in groq_stream(

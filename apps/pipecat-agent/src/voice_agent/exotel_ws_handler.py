@@ -58,6 +58,7 @@ from .streaming_orchestrator import (
     TurnCompleteEvent,
     prepare_intro_for_tts,
     run_turn_streaming,
+    transcript_unfinished,
 )
 from .supabase_client import (
     AgentSupabaseClient,
@@ -226,6 +227,14 @@ STREAM_MERGE_GRACE_SEC = int(
     os.environ.get("EXOTEL_STREAM_MERGE_GRACE_MS", "250")
 ) / 1000.0
 STREAM_MAX_HOLD_SEC = 4.0
+# Extra one-shot hold when the merged transcript looks cut off mid-sentence
+# ("Budget is around" — dangling connective / no terminal punctuation). The
+# lead is mid-thought; give them one longer beat to finish before answering
+# a fragment. Applied at most once per utterance so a lead who really does
+# trail off still gets a reply within grace + this.
+STREAM_DANGLING_HOLD_SEC = int(
+    os.environ.get("EXOTEL_STREAM_DANGLING_MS", "700")
+) / 1000.0
 _BARGE_IN_PCM_THRESHOLD = int(os.environ.get("EXOTEL_BARGE_IN_THRESHOLD", "2500"))
 BARGE_IN_MS = int(os.environ.get("EXOTEL_BARGE_IN_MS", "500"))
 
@@ -535,6 +544,7 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
     pending_finals: list[STTResult] = []
     pending_deadline = 0.0
     pending_first_at = 0.0
+    pending_extended = False  # dangling-fragment hold used for this utterance
 
     try:
         async for frame in session:
@@ -619,6 +629,7 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                 buffered_ms = silence_ms = voiced_ms = 0
                 barge_voiced_ms = 0
                 pending_finals.clear()
+                pending_extended = False
                 continue
             if isinstance(frame, StreamStopFrame):
                 logger.info("call_id=%s stopped: %s", call_id, frame.reason)
@@ -644,6 +655,7 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                 _close_task.add_done_callback(_bg_tasks.discard)
                 stt_stream = None
                 pending_finals.clear()
+                pending_extended = False
             use_stream = stt_stream is not None
 
             # While Priya's reply is still playing (+ a settle tail) we are
@@ -671,6 +683,7 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                         # she already answered it.
                         await stt_stream.feed(b"\x00" * len(chunk))
                         pending_finals.clear()
+                        pending_extended = False
                         while stt_stream.pop_final() is not None:
                             pass
                     if active.ctx.should_hard_stop():
@@ -717,13 +730,38 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                         await session.send_clear()
                         break
                     continue
+                merged_text = " ".join(
+                    r.transcript for r in pending_finals if r.transcript
+                ).strip()
+                # Cut-off guard: "Budget is around" finalizing on a thinking
+                # pause is a half-question — answering it literally derails
+                # the call (56e606ca). One extra hold per utterance lets the
+                # rest of the sentence arrive and merge.
+                if (
+                    not pending_extended
+                    and not held_too_long
+                    and transcript_unfinished(merged_text)
+                ):
+                    pending_extended = True
+                    pending_deadline = now + STREAM_DANGLING_HOLD_SEC
+                    _clog(call_id, "HOLD", f"dangling fragment, +{STREAM_DANGLING_HOLD_SEC:.1f}s: {merged_text[:60]}")
+                    if active.ctx.should_hard_stop():
+                        await session.send_clear()
+                        break
+                    continue
                 last = pending_finals[-1]
+                confidence = min(r.confidence for r in pending_finals)
+                # Streaming STT reports confidence=1.00 unconditionally, and
+                # its language tag on 1-2 word clips is a coin toss (logged:
+                # Gujarati "ઓકે", Telugu "ఓకే" for plain "ok"). Scale short
+                # merges below MIN_LANG_CONFIDENCE so the language state
+                # machine ignores their tag instead of flipping the call.
+                if len(merged_text.split()) <= 2:
+                    confidence = min(confidence, 0.5)
                 pre_transcribed = STTResult(
-                    transcript=" ".join(
-                        r.transcript for r in pending_finals if r.transcript
-                    ).strip(),
+                    transcript=merged_text,
                     language_code=last.language_code,
-                    confidence=min(r.confidence for r in pending_finals),
+                    confidence=confidence,
                     request_id=last.request_id,
                 )
                 if len(pending_finals) > 1:
@@ -732,6 +770,7 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                         f"{len(pending_finals)} segments -> one utterance",
                     )
                 pending_finals = []
+                pending_extended = False
             else:
                 # BATCH fallback path: local amplitude VAD + buffered POST.
                 silent = _is_silent_pcm(chunk)
@@ -871,6 +910,7 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
             buffered_ms = silence_ms = voiced_ms = 0
             barge_voiced_ms = 0
             pending_finals.clear()
+            pending_extended = False
 
             if turn_end_call:
                 # Let the goodbye line finish playing, then drop the call.
