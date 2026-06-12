@@ -290,7 +290,8 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
 
     parts.append(
         "<format>ROMAN SCRIPT ONLY. 1-2 sentences. "
-        "Never say your name or company. Never greet.</format>"
+        "Never re-introduce yourself or greet again. If the lead asks who "
+        "you are or your name, answer it briefly, then continue.</format>"
     )
 
     # Hard language pin per turn. Critical for Tamil: without this the LLM

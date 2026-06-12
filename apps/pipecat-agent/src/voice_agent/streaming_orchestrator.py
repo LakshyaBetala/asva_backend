@@ -1320,7 +1320,8 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
     # Tester feedback (2026-06-12): the call felt like a one-way Q&A; when
     # the lead asked anything mid-flow, Priya ignored it and fired her next
     # qualifier. Nothing kills trust faster than an unanswered question.
-    if intent in ("normal", "backchannel") and _lead_asked_question(_lt):
+    lead_question = intent in ("normal", "backchannel") and _lead_asked_question(_lt)
+    if lead_question:
         parts.append(
             '[The lead just asked a QUESTION. Answer THAT first, in one '
             'short honest sentence, before anything else. Never invent '
@@ -1478,7 +1479,19 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         return "\n".join(parts)
 
     if intent == "backchannel":
-        if conv.backchannel_count >= 2:
+        if "hello" in lead_lc or "ஹலோ" in (lead_text or ""):
+            # "Hello?" mid-call is a line check, not a listening ack — the
+            # lead likely missed Priya's last line (call 3cfaeed8: Priya
+            # answered "Hello" with her next qualifier; lead hung up).
+            parts.append(
+                '[Lead said "hello" MID-CALL — they are checking the line; '
+                'they likely did NOT hear you. Confirm you are here in 2-3 '
+                'words ("Yes sir, I\'m here" / "Haan sir, sun rahi hoon" / '
+                '"Sollunga sir, naan line la irukken" — match call language), '
+                'then repeat your LAST question in a SHORTER form. Do NOT '
+                'move to a new question.]'
+            )
+        elif conv.backchannel_count >= 2:
             parts.append(
                 'Lead is just listening passively (only said "' + lead_text.strip()
                 + '"), not answering. STOP explaining. Ask ONE short, direct question to '
@@ -1612,7 +1625,9 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         # ---- Close NOW (buying signals firm) ----
         # When the lead has stated a pain AND a hard constraint (timeline /
         # volume / supplier complaint), more discovery is overkill. Close.
-        if conv.close_armed and conv.consecutive_close_attempts < 1:
+        # A pending lead question outranks the scripted close/heat lines —
+        # "Say EXACTLY" over an unanswered question reads as a robot.
+        if conv.close_armed and conv.consecutive_close_attempts < 1 and not lead_question:
             if lang == "ta-IN":
                 close_phrase = (
                     "Sari sir, matching properties indha number ku WhatsApp la "
@@ -1640,7 +1655,7 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         # heat instantly — hot leads get closed in the next sentence, warm
         # leads get ONE pain probe, cold leads get a warm goodbye. We surface
         # the heat here so Priya's next line matches the room.
-        temperature = slots.live_temperature(turn_idx=turn)
+        temperature = "unknown" if lead_question else slots.live_temperature(turn_idx=turn)
         if temperature == "hot":
             if lang == "ta-IN":
                 heat_directive = (
@@ -1682,19 +1697,14 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
                     "toward the site-visit close, do NOT recite listings.]"
                 )
         elif temperature == "cold":
-            if lang == "ta-IN":
-                parts.append(
-                    "[TEMPERATURE: COLD. No buying signals after 3+ turns. "
-                    "ONE last attempt — single concrete question in TAMIL "
-                    "('Ungalukku endha area la, evlo budget la property "
-                    "venum sir?'). If still no answer next turn, exit warmly.]"
-                )
-            else:
-                parts.append(
-                    "[TEMPERATURE: COLD. No buying signals after 3+ turns. "
-                    "ONE last attempt — single concrete question (which area, "
-                    "what budget). If still no answer next turn, exit warmly.]"
-                )
+            # No quoted example sentence here — llama parrots any quoted
+            # line verbatim regardless of context (calls 43ea487c, 3cfaeed8).
+            parts.append(
+                "[TEMPERATURE: COLD. No buying signals after 3+ turns. "
+                "ONE last attempt — ask ONE short concrete question about "
+                "their area or budget, phrased to fit what the lead just "
+                "said. If still no answer next turn, exit warmly.]"
+            )
         # "unknown" → no extra directive; let phase hints drive.
 
         # Surface EVERY known slot — without this the LLM has no memory of
