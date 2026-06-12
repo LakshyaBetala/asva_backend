@@ -151,9 +151,9 @@ class TestCloseLoop:
 
 class TestPhaseDirectives:
     @pytest.mark.parametrize("phase,expected_substring", [
-        (Phase.CONNECT, "business"),
-        (Phase.DISCOVER, "pain"),
-        (Phase.QUALIFY, "volume"),
+        (Phase.CONNECT, "renting"),
+        (Phase.DISCOVER, "must-have"),
+        (Phase.QUALIFY, "budget"),
         (Phase.CLOSE, "close"),
         (Phase.EXTENSION, "close"),
     ])

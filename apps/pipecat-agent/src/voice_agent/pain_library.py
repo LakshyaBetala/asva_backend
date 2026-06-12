@@ -3,142 +3,109 @@
 Why pre-written
 ---------------
 Letting the LLM invent pain points on the fly produces generic ones
-("delivery is hard, right?"). Real distributors and procurement leads
-have *specific* pains: 45-60 day payment cycles, monsoon supply gaps,
-batch quality variance. A hypothesis that names a real pain anchors
-the lead's trust ("this person knows our industry") and pulls slot
-data out faster than open questions.
+("finding a house is hard, right?"). Real property leads have *specific*
+pains: listings that look nothing like the photos, owner preferences
+killing rental options, possession delays on under-construction. A
+hypothesis that names a real pain anchors the lead's trust ("this person
+knows the market") and pulls slot data out faster than open questions.
 
-The library is curated, not exhaustive. Each entry is one sentence,
-language-localized, and ends in a soft probe ("aapke saath kuch aisa
-hai?"). The pipeline picks ONE based on (product_category, language)
-and passes it in the system prompt for DISCOVER turn.
+The library is curated, not exhaustive. Each entry is 1-2 short
+sentences, language-localized, and ends in a soft probe ("aapke saath
+aisa hua hai?"). The pipeline picks ONE based on (category, language)
+and passes it in the system prompt for DISCOVER turns. None of the
+entries name a price or number — Priya never invents figures.
+
+The chemical-SPC version of this library moved with the SPC persona
+removal (2026-06-11); this file serves the real-estate vertical only.
 """
 from __future__ import annotations
 
 from .language_state import Lang
 
 
-# Product categories used as keys. Map raw product_interest strings to
-# these via _CATEGORY_KEYWORDS below.
+# Lead-intent categories used as keys. Map raw product_interest strings
+# (e.g. "2 BHK Adyar, buy" / "15k-30k for rent") to these via
+# _CATEGORY_KEYWORDS below.
 class Category:
-    SOLVENTS = "solvents"
-    POLYMERS = "polymers"
-    ACIDS = "acids"
-    CAUSTICS = "caustics"
-    AGROCHEMICALS = "agrochemicals"
-    GENERIC = "generic"  # fallback
+    RENT = "rent"
+    INVESTMENT = "investment"
+    BUY = "buy"
+    GENERIC = "generic"  # fallback when intent isn't extracted yet
 
 
+# Order matters: "good rental yield" must read as INVESTMENT, not RENT,
+# and "2 BHK for rent" must read as RENT, not BUY — so the check order is
+# INVESTMENT, then RENT, then BUY.
 _CATEGORY_KEYWORDS: dict[str, list[str]] = {
-    Category.SOLVENTS: ["solvent", "acetone", "toluene", "ethanol", "methanol", "ipa", "mek"],
-    Category.POLYMERS: ["polymer", "polyethylene", "polypropylene", "pvc", "resin", "plastic"],
-    Category.ACIDS: ["acid", "sulfuric", "hcl", "hydrochloric", "nitric", "phosphoric"],
-    Category.CAUSTICS: ["caustic", "naoh", "lye", "sodium hydroxide", "potassium hydroxide", "koh"],
-    Category.AGROCHEMICALS: ["pesticide", "fungicide", "herbicide", "fertilizer", "agro"],
+    Category.INVESTMENT: ["invest", "yield", "resale"],
+    Category.RENT: ["rent", "rental", "lease", "kiraya", "kiraye", "vadagai"],
+    Category.BUY: [
+        "buy", "bhk", "flat", "apartment", "villa", "plot",
+        "house", "ghar", "veedu", "purchase",
+    ],
 }
 
 
 # Hypotheses: (category, lang) -> list of full sentences.
 # Each ends with a soft probe so the lead can confirm or deny without losing face.
 PAIN_HYPOTHESES: dict[tuple[str, Lang], list[str]] = {
-    # SOLVENTS
-    (Category.SOLVENTS, Lang.HI): [
-        "Acha, hum jo doosre distributors ke saath kaam karte hain, unme se kai bolte hain solvent ka quality monsoon mein inconsistent ho jaata hai. Aapke saath kuch aisa hai?",
-        "Ji, aksar bada problem yeh hota hai ki bulk solvent ka payment cycle 45-60 din ka hota hai. Aapke supplier kya credit terms dete hain?",
-        "Haan, solvents mein purity ka grade-mismatch bahut common hai — batch ke saath certificate aata hai par actual purity alag. Aapke saath dikkat aati hai?",
+    # BUY
+    (Category.BUY, Lang.HI): [
+        "Achha, zyaadatar log bolte hain photos mein flat ek jaisa dikhta hai aur visit pe alag nikalta hai. Aapke saath aisa hua hai?",
+        "Ji, budget ke andar sahi area mein ready options milna sabse bada challenge hota hai. Aapko ab tak kaise options mile hain?",
+        "Under-construction mein possession date ka bharosa nahi hota — delay common hai. Aap ready-to-move dekh rahe hain ya under-construction?",
     ],
-    (Category.SOLVENTS, Lang.EN): [
-        "I see — many distributors we work with mention that solvent quality becomes inconsistent during monsoon. Does that happen with your current supplier?",
-        "One thing we often hear is the 45-60 day payment terms on bulk solvents are tight for cashflow. What's your experience?",
-        "Purity grade mismatches — certificate says one thing, actual batch is different — is something I hear a lot. Is that an issue for you?",
+    (Category.BUY, Lang.EN): [
+        "Most buyers tell us the flat looks great in photos but feels different on the actual visit. Has that been your experience?",
+        "Finding the right area within budget is usually the hardest part. How have the options been so far?",
+        "With under-construction, possession delays are the big worry. Are you looking at ready-to-move or under-construction?",
     ],
-    (Category.SOLVENTS, Lang.TA): [
-        "Naanga vera distributors-kitta paatha, solvent quality monsoon time-la inconsistent-aa irukku-nu solraanga. Ungalukku kooda andha problem irukka?",
-        "Solvent supplier-kitta payment cycle 45-60 days irukku-nu kooduthal-aa kekkaren — ungalukku cashflow-la dikkat aagudha?",
-        "Purity grade-la mismatch — certificate-la oru maathiri, batch-la innoru maathiri — andha problem ungalukku irukkudha?",
-    ],
-
-    # POLYMERS
-    (Category.POLYMERS, Lang.HI): [
-        "Polymer industry mein sabse common dard delivery delay hai — peak season mein 2-3 hafte late ho jaata hai. Aapke saath kuch aisa hota hai?",
-        "Ji, polymer ka MOQ aksar zyaada hota hai jab aap chhoti quantity chahte ho. Aapko bhi yeh issue aata hai?",
-        "Acha, polymer ke grade-mismatch ka problem common hai — film grade ki jagah injection grade aa jaata hai. Aapko aisa kuch hua hai?",
-    ],
-    (Category.POLYMERS, Lang.EN): [
-        "Polymer delivery delays during peak season — 2-3 weeks late — is the most common pain we hear. Does that hit you too?",
-        "Many buyers struggle with high MOQs when they need a smaller batch. Is that a friction point for you?",
-        "Grade mismatch — film grade arriving when you ordered injection grade — is surprisingly common. Have you faced it?",
-    ],
-    (Category.POLYMERS, Lang.TA): [
-        "Polymer delivery delay peak season-la 2-3 weeks late aagiradhu pol-aa irukku — ungalukku andha problem irukka?",
-        "Polymer-kku MOQ atikam-aa irukku, chinna batch venum-naa difficult-aa irukku — ungalukku andha issue irukka?",
-        "Grade mismatch — order panniyathu film grade, vandhirukku injection grade — andha problem ungalukku vandhuruka?",
+    (Category.BUY, Lang.TA): [
+        "Photos la nalla irukkum, aana site visit la vera maathiri irukkum-nu romba per solraanga. Ungalukku andha experience irukka?",
+        "Budget-kulla nalla area-la option kedaikiradhu dhaan kashtam-nu solraanga. Ungalukku ippo varaikkum options eppadi irundhuchu?",
+        "Under-construction na possession delay dhaan periya worry. Neenga ready-to-move paakareengala, illa under-construction-aa?",
     ],
 
-    # ACIDS
-    (Category.ACIDS, Lang.HI): [
-        "Acid supply mein safety documentation ka jhanjhat bahut hota hai — har shipment ke saath fresh paperwork. Aapke saath kya situation hai?",
-        "Ji, acid concentration ka stability problem common hai — invoice mein 98% likha, actual 96%. Aapko bhi yeh dikkat aati hai?",
-        "Haan, acid ke transport mein leakage ka risk hota hai, insurance claim mein time lagta hai. Aapke pichle saal mein kuch hua tha?",
+    # RENT
+    (Category.RENT, Lang.HI): [
+        "Rent mein aksar owner ki preferences se options atak jaati hain — family-only, veg-only. Aapko aisi dikkat aayi hai?",
+        "Ji, deposit aur agreement ki terms pe hi zyaadatar deals atakti hain. Aapke liye sabse important kya hai?",
     ],
-    (Category.ACIDS, Lang.EN): [
-        "Acid procurement always comes with safety documentation hassles — fresh paperwork every shipment. What's your process?",
-        "Concentration stability is the quiet pain — invoice says 98%, real batch is 96%. Have you seen that?",
-        "Transport leakage incidents — and the insurance claim cycle that follows — is one we hear a lot. Has that hit you?",
+    (Category.RENT, Lang.EN): [
+        "With rentals, owner preferences like family-only or veg-only knock out half the options. Have you run into that?",
+        "Deposit and agreement terms are where most rental deals get stuck. What matters most for you?",
     ],
-    (Category.ACIDS, Lang.TA): [
-        "Acid supply-la safety documentation problem konjam atikam-aa irukku — ovvoru shipment-kkum fresh paperwork. Ungalukku eppadi?",
-        "Acid concentration stability problem-aa irukku — invoice-la 98% nu sollirukku, actual-la 96%. Andha problem ungalukku vandhirukka?",
-        "Acid transport-la leakage incident, insurance claim-kku romba time aagudhu — andha experience ungalukku irukka?",
+    (Category.RENT, Lang.TA): [
+        "Rent-la owner preference problem perusu — family-only, veg-only nu options kammi aagidum. Ungalukku andha problem vandhirukka?",
+        "Advance um agreement terms um dhaan rent deals la main issue. Ungalukku edhu important?",
     ],
 
-    # CAUSTICS
-    (Category.CAUSTICS, Lang.HI): [
-        "Caustic ka MOQ aksar truck-load mein hota hai, jo chhote players ke liye difficult hai. Aapko kya quantity chahiye hota hai?",
-        "Acha, caustic flakes vs liquid ka conversion mein consistency ka issue aata hai. Aapko kaunsi form chahiye?",
-        "Ji, caustic ke supply mein seasonal fluctuation hoti hai — Diwali ke baad shortage. Aapne face kiya hai?",
+    # INVESTMENT
+    (Category.INVESTMENT, Lang.HI): [
+        "Investment ke liye sabse bada sawaal hota hai — rental yield ya appreciation. Aapka focus kya hai?",
+        "Achha, investment property mein resale aur tenant milne ki tension rehti hai. Aap kis area mein soch rahe hain?",
     ],
-    (Category.CAUSTICS, Lang.EN): [
-        "Caustic MOQs are usually a truckload — tough for smaller operations. What quantity fits your operation?",
-        "Caustic flakes vs liquid: consistency in conversion is a quiet problem. Which form do you prefer?",
-        "Post-Diwali caustic shortages hit a lot of buyers. Has that hurt your operations?",
+    (Category.INVESTMENT, Lang.EN): [
+        "For investment buyers the big question is rental yield versus appreciation. Which matters more to you?",
+        "With investment property, resale and finding tenants are the usual worries. Which area are you considering?",
     ],
-    (Category.CAUSTICS, Lang.TA): [
-        "Caustic-kku MOQ truckload-aa irukku, chinna operation-kku kashtam — ungalukku enna quantity venum?",
-        "Caustic flakes vs liquid conversion-la consistency problem — ungalukku endha form preferable?",
-        "Diwali-kku aprum caustic shortage romba peruku-kku problem-aa irukku — ungalukku andha experience irukka?",
+    (Category.INVESTMENT, Lang.TA): [
+        "Investment-na rental yield-aa, appreciation-aa nu dhaan main question. Ungaloda focus edhu?",
+        "Investment property la resale um tenant kedaikiradhum dhaan tension. Neenga endha area la yosikireenga?",
     ],
 
-    # AGROCHEMICALS
-    (Category.AGROCHEMICALS, Lang.HI): [
-        "Agro mein season-end stock clearance ka pressure bahut hota hai. Aapke saath kya planning hoti hai?",
-        "Ji, formulation grade consistency ka issue common hai — har batch mein efficacy alag. Aapko bhi face hua hai?",
-        "Acha, agro license aur paperwork ka burden bahut hota hai naye supplier ke saath. Aapke supplier change karne mein dikkat aati hai?",
-    ],
-    (Category.AGROCHEMICALS, Lang.EN): [
-        "Season-end stock clearance pressure in agro is brutal. How do you plan around it?",
-        "Formulation grade efficacy varying batch to batch — has that been your experience?",
-        "License and paperwork burden when switching agro suppliers — does that slow you down?",
-    ],
-    (Category.AGROCHEMICALS, Lang.TA): [
-        "Agro-la season-end stock clearance pressure romba irukku — ungalukku planning eppadi?",
-        "Formulation grade efficacy batch-kku batch difference irukku — andha problem ungalukku irukka?",
-        "Agro license, paperwork burden supplier-a maathara veaikku problem aagudha?",
-    ],
-
-    # GENERIC fallback when we can't categorize the product yet.
+    # GENERIC fallback when we don't know buy/rent yet (early DISCOVER).
     (Category.GENERIC, Lang.HI): [
-        "Acha, hum jo distributors ke saath kaam karte hain, unme se kai payment terms tight hone ka bolte hain. Aapke saath kuch aisa hai?",
-        "Ji, delivery timelines aksar challenge hota hai. Aapke current supplier kaisa perform karte hain?",
+        "Achha, zyaadatar log bolte hain ki sahi area mein budget fit nahi hota. Aap kaunsa area dekh rahe hain?",
+        "Ji, listings photos mein achhi lagti hain par visit pe alag nikalti hain — yeh sabse common complaint hai. Aapka experience kaisa raha?",
     ],
     (Category.GENERIC, Lang.EN): [
-        "Many distributors we work with mention payment terms get tight. Does that match your experience?",
-        "Delivery timelines are often a challenge — how does your current supplier handle them?",
+        "Most people tell us the hardest part is finding the right area within budget. Which areas are you looking at?",
+        "The most common complaint we hear is listings looking nothing like the photos on visit. What has your experience been?",
     ],
     (Category.GENERIC, Lang.TA): [
-        "Naanga vera distributors-kitta paatha, payment terms tight-aa irukku-nu solraanga. Ungalukku andha problem irukka?",
-        "Delivery timeline aksar challenge-aa irukku — ungaloda current supplier eppadi handle pannaranga?",
+        "Romba per sollura problem — nalla area-la budget fit aagala nu. Neenga endha area paakareenga?",
+        "Photos la nalla irukkum, aana neryla paatha vera maathiri irukkum — idhu dhaan common complaint. Ungaloda experience eppadi?",
     ],
 }
 

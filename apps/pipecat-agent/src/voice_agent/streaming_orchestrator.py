@@ -31,6 +31,7 @@ from .language_state import (
     Transition,
     is_bare_ack,
 )
+from .industry.real_estate import LOCALITIES, LOCALITY_ALIASES
 from .pain_library import pick_pain_hypothesis
 from .phrase_cache import PINNED_VOICE_ID, load_or_synthesize_phrase
 from .qualification import QualificationSlots, extract_slots
@@ -607,13 +608,13 @@ async def run_turn_streaming(
             or prior_slots.current_supplier
             or (prior_slots.timeline_days is not None)
         )
-        # Cheap text-level signal: if the lead's reply contains an industry
-        # word (pharma, paints, plastics, etc. — or Tamil/Hindi script
-        # equivalents), it's NOT unproductive even if the slot extractor
-        # hasn't run yet. This protects warm-but-terse leads who say
-        # "ஃபார்மாவில் இருக்கேன்" / "pharma mein hai" — true info,
-        # but only 2-3 space-separated tokens.
-        if not produced_info and _mentions_industry(stt_result.transcript):
+        # Cheap text-level signal: if the lead's reply contains property
+        # info (BHK, rent/buy, budget words, a locality name — or Tamil/
+        # Hindi script equivalents), it's NOT unproductive even if the slot
+        # extractor hasn't run yet. This protects warm-but-terse leads who
+        # say "அண்ணா நகர்" / "do BHK chahiye" — true info, but only 2-3
+        # space-separated tokens.
+        if not produced_info and _mentions_property_info(stt_result.transcript):
             produced_info = True
 
         if word_count < 6 and not produced_info:
@@ -833,35 +834,40 @@ _INDIC_SCRIPT_RE = re.compile(
 # reply is otherwise terse. Lowercase ASCII matches romanized speech and
 # English; the unicode patterns catch native-script mentions ("ஃபார்மா").
 # Keep these high-signal — don't add common verbs/adjectives.
-_INDUSTRY_ASCII = frozenset({
-    "pharma", "pharmaceutical", "pharmaceuticals", "paint", "paints",
-    "coating", "coatings", "adhesive", "adhesives", "plastic", "plastics",
-    "polymer", "polymers", "rubber", "textile", "textiles", "leather",
-    "automotive", "auto", "food", "beverage", "beverages", "cosmetic",
-    "cosmetics", "detergent", "detergents", "cleaning", "construction",
-    "agro", "agri", "agriculture", "fertilizer", "fertilizers", "ink",
-    "inks", "printing", "packaging", "lubricant", "lubricants",
-    "petrochemical", "petrochemicals", "chemical", "chemicals", "soap",
-    "personal care", "homecare", "industrial", "manufacturing",
+_PROPERTY_ASCII = frozenset({
+    "bhk", "flat", "apartment", "villa", "plot", "house", "property",
+    "rent", "rental", "lease", "buy", "purchase", "investment",
+    "budget", "lakh", "lakhs", "crore", "crores", "loan", "emi",
+    "ready to move", "under construction", "possession", "site visit",
+    "society", "builder", "resale", "deposit", "advance",
+    "veedu", "ghar", "makaan", "kiraya", "vadagai",
 })
-_INDUSTRY_SCRIPT_RE = re.compile(
-    r"ஃபார்மா|ஃபார்ம|பெயிண்|பெயின்ட|ப்ளாஸ்டிக|ரப்பர|"  # Tamil
-    r"फार्मा|पेंट|प्लास्टिक|रबर|कोटिंग|"  # Hindi
-    r"फार्मा|पेंट"
+_PROPERTY_SCRIPT_RE = re.compile(
+    r"வீடு|வீட்டு|ஃப்ளாட்|பிளாட்|வாடகை|சொத்து|நகர்|"  # Tamil
+    r"घर|मकान|फ्लैट|किराया|प्रॉपर्टी|बजट|लाख|करोड़|नगर"  # Hindi
 )
+# A locality name alone ("Anna Nagar", "Bandra West") is hard info for a
+# broker — it must count as a productive turn even when the slot extractor
+# hasn't filled product_interest yet.
+_LOCALITY_TOKENS = frozenset(
+    name.lower() for names in LOCALITIES.values() for name in names
+) | frozenset(LOCALITY_ALIASES.keys())
 
 
-def _mentions_industry(text: str | None) -> bool:
-    """True when the lead's transcript names an industry/sector — useful
-    "produced info" signal for the unproductive-turn counter even when the
-    LLM slot extractor hasn't run yet."""
+def _mentions_property_info(text: str | None) -> bool:
+    """True when the lead's transcript names property info (BHK / budget /
+    buy-rent / locality) — useful "produced info" signal for the
+    unproductive-turn counter even when the LLM slot extractor hasn't run."""
     if not text:
         return False
     lower = text.lower()
-    for token in _INDUSTRY_ASCII:
+    for token in _PROPERTY_ASCII:
         if token in lower:
             return True
-    if _INDUSTRY_SCRIPT_RE.search(text):
+    for locality in _LOCALITY_TOKENS:
+        if locality in lower:
+            return True
+    if _PROPERTY_SCRIPT_RE.search(text):
         return True
     return False
 
@@ -986,11 +992,11 @@ def _build_context_summary(slots, ctx) -> str:
     """Build a running summary of what's known so far. Prevents re-asking."""
     parts = []
     if slots.product_interest:
-        parts.append(f"Products discussed: {slots.product_interest}")
+        parts.append(f"Requirement discussed: {slots.product_interest}")
     if slots.volume_monthly_kg and slots.volume_monthly_kg > 0:
         parts.append(f"Volume: {slots.volume_monthly_kg} kg/month")
     if slots.current_supplier:
-        parts.append(f"Current supplier: {slots.current_supplier}")
+        parts.append(f"Other broker they already use: {slots.current_supplier}")
     if slots.pain_point:
         parts.append(f"Pain: {slots.pain_point}")
     if slots.decision_role:
@@ -1146,6 +1152,39 @@ def _is_backchannel(text: str) -> bool:
     return any(w in _BACKCHANNEL_TOKENS for w in words)
 
 
+# Question openers across the call languages (Roman + native script).
+# Used to catch lead questions even when STT drops the "?" — tester
+# feedback (2026-06-12): "if ask anything in between, it will ask its
+# next question" — Priya was ignoring lead questions and ploughing on.
+_QUESTION_WORDS = frozenset({
+    # English
+    "what", "how", "why", "when", "where", "who", "which", "whose",
+    # Romanized Hindi
+    "kya", "kaise", "kaisa", "kaisi", "kyu", "kyun", "kyon", "kitna",
+    "kitne", "kitni", "kab", "kaun", "kahan", "kahaan",
+    # Devanagari
+    "क्या", "कैसे", "कैसा", "क्यों", "कितना", "कितने", "कितनी",
+    "कब", "कौन", "कहां", "कहाँ",
+    # Romanized Tamil
+    "enna", "eppadi", "yen", "eppo", "eppadhu", "evlo", "evvalavu",
+    "yaaru", "yaar", "edhu", "enga", "engey",
+    # Tamil script
+    "என்ன", "எப்படி", "ஏன்", "எப்போ", "எவ்ளோ", "எவ்வளவு",
+    "யாரு", "யார்", "எது", "எங்க",
+})
+
+
+def _lead_asked_question(text: str) -> bool:
+    """True when the lead's utterance is (or contains) a question."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if "?" in t:
+        return True
+    words = re.sub(r"[^\w\sऀ-ൿ]|[।॥]", " ", t.lower()).split()
+    return any(w in _QUESTION_WORDS for w in words)
+
+
 def classify_lead_intent(lead_text: str, conv) -> str:
     """Coarse intent for end-of-call decisions. One of:
     silence | backchannel | close | reject | wrong | abuse | offtopic | normal.
@@ -1275,6 +1314,19 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
             'NOT guess or change topic — ask them to repeat once, briefly: '
             '"Sorry sir, awaaz clear nahin aayi — ek baar phir boliye?" '
             '(match the call language). If it makes sense, reply normally.]'
+        )
+
+    # Lead asked something — answer it BEFORE any scripted next question.
+    # Tester feedback (2026-06-12): the call felt like a one-way Q&A; when
+    # the lead asked anything mid-flow, Priya ignored it and fired her next
+    # qualifier. Nothing kills trust faster than an unanswered question.
+    if intent in ("normal", "backchannel") and _lead_asked_question(_lt):
+        parts.append(
+            '[The lead just asked a QUESTION. Answer THAT first, in one '
+            'short honest sentence, before anything else. Never invent '
+            'prices, availability, or property details — if you don\'t '
+            'have it, say the team will share exact details on WhatsApp. '
+            'Only AFTER answering may you ask ONE follow-up question.]'
         )
 
     if turn == 0:
@@ -1531,9 +1583,9 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         # ---- Tire-kicker exit (5 unproductive turns in a row) ----
         # Threshold was 3 — too aggressive for Tamil/Hindi cold calls where
         # a real buyer often opens with 1-3 word replies ("haan", "achha",
-        # "in pharma") before warming up. 5 gives the lead a fair chance to
+        # "Anna Nagar") before warming up. 5 gives the lead a fair chance to
         # surface a slot. We also stop counting turns where the lead names
-        # an industry — see _mentions_industry().
+        # property info — see _mentions_property_info().
         if conv.unproductive_turn_count >= 5:
             if lang == "ta-IN":
                 exit_phrase = (
@@ -1563,22 +1615,22 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         if conv.close_armed and conv.consecutive_close_attempts < 1:
             if lang == "ta-IN":
                 close_phrase = (
-                    "Sari sir, indha number ku WhatsApp la quote varum, "
-                    "team indre call pannuvaanga. Thank you sir!"
+                    "Sari sir, matching properties indha number ku WhatsApp la "
+                    "anuppuren. Site visit ku Saturday-aa, Sunday-aa sir?"
                 )
             elif lang == "en-IN":
                 close_phrase = (
-                    "Got it sir — our team will send a quote on WhatsApp to "
-                    "this number and call you today. Thank you, sir!"
+                    "Got it sir — I'll WhatsApp the matching options to this "
+                    "number. For the site visit, Saturday or Sunday?"
                 )
             else:
                 close_phrase = (
-                    "Bilkul sir, isi number pe WhatsApp pe quote aa jayega, "
-                    "hamari team aaj hi follow-up karegi. Thank you sir!"
+                    "Bilkul sir, matching options isi number pe WhatsApp kar "
+                    "doongi. Site visit ke liye Saturday theek rahega ya Sunday?"
                 )
             parts.append(
-                f'[CLOSE NOW. Lead gave hard requirements — stop asking '
-                f'questions. Say EXACTLY: "{close_phrase}". Nothing else.]'
+                f'[CLOSE NOW. Lead gave hard requirements — stop discovery. '
+                f'Say EXACTLY: "{close_phrase}". Nothing else.]'
             )
             return "\n".join(parts)
 
@@ -1593,55 +1645,55 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
             if lang == "ta-IN":
                 heat_directive = (
                     "[TEMPERATURE: HOT. Stop discovery. CLOSE this turn — "
-                    "'Sari sir, indha number ku WhatsApp la quote varum, "
-                    "team indre call pannuvaanga. Thank you sir!']"
+                    "'Sari sir, matching properties indha number ku WhatsApp la "
+                    "anuppuren. Site visit ku Saturday-aa, Sunday-aa sir?']"
                 )
             elif lang == "en-IN":
                 heat_directive = (
                     "[TEMPERATURE: HOT. Stop discovery. CLOSE this turn — "
-                    "'Got it sir, our team will send a quote on WhatsApp to "
-                    "this number and call you today. Thank you, sir!']"
+                    "'Got it sir, I'll WhatsApp the matching options to this "
+                    "number. For the site visit, Saturday or Sunday?']"
                 )
             else:
                 heat_directive = (
                     "[TEMPERATURE: HOT. Stop discovery. CLOSE this turn — "
-                    "'Bilkul sir, isi number pe WhatsApp pe quote aa jayega, "
-                    "team aaj hi call karegi. Thank you sir!']"
+                    "'Bilkul sir, matching options isi number pe WhatsApp kar "
+                    "doongi. Site visit Saturday ya Sunday?']"
                 )
             parts.append(heat_directive)
         elif temperature == "warm":
             if lang == "ta-IN":
                 parts.append(
                     "[TEMPERATURE: WARM. Lead is engaged. Ask the ONE missing "
-                    "qualifier (volume / timeline / pain) in TAMIL — start with "
-                    "'Sari sir, ...' + the question. Build toward the close, do "
-                    "NOT list products.]"
+                    "qualifier (budget / area / BHK / buy-vs-rent) in TAMIL — "
+                    "start with 'Sari sir, ...' + the question. Build toward "
+                    "the site-visit close, do NOT recite listings.]"
                 )
             elif lang == "en-IN":
                 parts.append(
                     "[TEMPERATURE: WARM. Lead is engaged. Ask the ONE missing "
-                    "qualifier (volume / timeline / pain). Build toward the "
-                    "close, do NOT list products.]"
+                    "qualifier (budget / locality / BHK / buy-vs-rent). Build "
+                    "toward the site-visit close, do NOT recite listings.]"
                 )
             else:
                 parts.append(
                     "[TEMPERATURE: WARM. Lead is engaged. Ask the ONE missing "
-                    "qualifier (volume / timeline / pain). Build toward the "
-                    "close, do NOT list products.]"
+                    "qualifier (budget / locality / BHK / buy-vs-rent). Build "
+                    "toward the site-visit close, do NOT recite listings.]"
                 )
         elif temperature == "cold":
             if lang == "ta-IN":
                 parts.append(
                     "[TEMPERATURE: COLD. No buying signals after 3+ turns. "
-                    "ONE last attempt — single concrete pain question in TAMIL "
-                    "('Ungal current supplier la enna problem irukku sir?'). "
-                    "If still no answer next turn, exit warmly.]"
+                    "ONE last attempt — single concrete question in TAMIL "
+                    "('Ungalukku endha area la, evlo budget la property "
+                    "venum sir?'). If still no answer next turn, exit warmly.]"
                 )
             else:
                 parts.append(
                     "[TEMPERATURE: COLD. No buying signals after 3+ turns. "
-                    "ONE last attempt — single concrete pain question. "
-                    "If still no answer next turn, exit warmly.]"
+                    "ONE last attempt — single concrete question (which area, "
+                    "what budget). If still no answer next turn, exit warmly.]"
                 )
         # "unknown" → no extra directive; let phase hints drive.
 
@@ -1657,7 +1709,7 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         if getattr(slots.buying_frequency, "value", "unknown") not in ("unknown", None):
             known.append(f"buying frequency: {slots.buying_frequency.value}")
         if slots.current_supplier:
-            known.append(f"current supplier: {slots.current_supplier}")
+            known.append(f"other broker they already use: {slots.current_supplier}")
         if slots.pain_point:
             known.append(f"pain point: {slots.pain_point}")
         if getattr(slots.decision_role, "value", "unknown") not in ("unknown", None):

@@ -447,3 +447,51 @@ async def test_fragment_recorded_with_cutoff_marker():
     assert any(
         "cut off" in t for t in ctx.conversation_state.recent_lead_turns
     )
+
+
+# -- Lead-question answer-first directive (tester feedback 2026-06-12) -------
+
+class TestLeadQuestionDirective:
+    """Tester: 'English is like Q&A — if [I] ask anything in between, it
+    will ask its next question.' Lead questions must be answered first."""
+
+    def test_lead_asked_question_detection(self):
+        from voice_agent.streaming_orchestrator import _lead_asked_question
+
+        assert _lead_asked_question("What is the price?")
+        assert _lead_asked_question("ye kitna ka hai")  # no "?" — romanized Hindi
+        assert _lead_asked_question("क्या ये ready to move है")  # Devanagari
+        assert _lead_asked_question("evlo budget venum")  # romanized Tamil
+        assert _lead_asked_question("நீங்க யாரு")  # Tamil script
+        assert not _lead_asked_question("I am looking in Anna Nagar.")
+        assert not _lead_asked_question("")
+
+    def test_question_gets_answer_first_directive(self):
+        from voice_agent.conversation_state import ConversationState
+        from voice_agent.streaming_orchestrator import _format_user_message
+
+        conv = ConversationState()
+        conv.record_lead_turn("Aap kaun se builder ke saath kaam karte ho?")
+        msg = _format_user_message(
+            "Aap kaun se builder ke saath kaam karte ho?",
+            QualificationSlots(),
+            conv,
+            lang="hi-IN",
+            intent="normal",
+        )
+        assert "Answer THAT first" in msg
+
+    def test_statement_gets_no_question_directive(self):
+        from voice_agent.conversation_state import ConversationState
+        from voice_agent.streaming_orchestrator import _format_user_message
+
+        conv = ConversationState()
+        conv.record_lead_turn("I am looking in Anna Nagar.")
+        msg = _format_user_message(
+            "I am looking in Anna Nagar.",
+            QualificationSlots(),
+            conv,
+            lang="en-IN",
+            intent="normal",
+        )
+        assert "Answer THAT first" not in msg

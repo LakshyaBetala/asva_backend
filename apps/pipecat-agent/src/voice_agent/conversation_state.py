@@ -308,17 +308,21 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
         ack_nudge_lang = "sari/aama/enna"
         close_hint = (
             "Close in PURE TAMIL: "
-            "'Sari sir, indha number ku WhatsApp la quote varum, "
-            "team call pannuvaanga.' Then thank + stop."
+            "'Sari sir, matching properties indha number ku WhatsApp la "
+            "anuppuren. Site visit ku Saturday-aa, Sunday-aa?' "
+            "Confirm the slot, then thank + stop."
         )
-        connect_hint = "Ungal company enna line sir? ONE question only, in Tamil."
+        connect_hint = (
+            "Veedu vaanganum-aa illa rent-ku-aa paakareenga sir? "
+            "ONE question only, in Tamil."
+        )
         discover_hint = (
-            "Find their pain in Tamil — delivery-aa, rate-aa, quality-aa? "
-            "Tamil only, no Hindi."
+            "Find their must-have in Tamil — endha area-aa, budget-aa, "
+            "school pakkathula-aa? Tamil only, no Hindi."
         )
         qualify_hint = (
-            "Ask volume / timeline / current supplier in Tamil "
-            "(evlo venum, evlo naal, yaaru kitta vangureenga). "
+            "Ask the missing one of budget / area / BHK in Tamil "
+            "(evlo budget, endha area, ethana BHK). "
             "Give ONE value point in Tamil."
         )
         ext_hint = "Strong buying signal. Push for the Tamil close NOW."
@@ -329,22 +333,30 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
         )
         ack_nudge_lang = "right/sure/got it"
         close_hint = (
-            "Close: 'Our team will send a quote on WhatsApp to this number, sir.' "
-            "Then thank + stop."
+            "Close: 'I'll WhatsApp matching options to this number, sir. "
+            "Saturday or Sunday for the site visit?' "
+            "Confirm the slot, then thank + stop."
         )
-        connect_hint = "Ask about their business. ONE question only."
-        discover_hint = "Find their pain — delivery? pricing? quality?"
-        qualify_hint = "Ask volume, timeline, current supplier. Give ONE value point."
+        connect_hint = "Ask buying or renting. ONE question only."
+        discover_hint = "Find their must-have — locality? budget? possession timeline?"
+        qualify_hint = (
+            "Ask the missing one of budget / locality / BHK. "
+            "Give ONE value point."
+        )
         ext_hint = "Strong signal. Push for close."
     else:  # hi-IN
         ack_nudge_lang = "ji/haan/achha"
         close_hint = (
-            "Close: 'Isi number pe WhatsApp pe quote aa jayega hamare team se.' "
-            "Then thank + stop."
+            "Close: 'Matching options isi number pe WhatsApp kar doongi. "
+            "Site visit Saturday ya Sunday?' "
+            "Confirm the slot, then thank + stop."
         )
-        connect_hint = "Ask about their business. ONE question only."
-        discover_hint = "Find their pain — delivery? pricing? quality?"
-        qualify_hint = "Ask volume, timeline, current supplier. Give ONE value point."
+        connect_hint = "Ask buying or renting. ONE question only."
+        discover_hint = "Find their must-have — locality? budget? possession timeline?"
+        qualify_hint = (
+            "Ask the missing one of budget / locality / BHK. "
+            "Give ONE value point."
+        )
         ext_hint = "Strong signal. Push for close."
 
     parts.append(f"<current_phase>{state.phase.value}</current_phase>")
