@@ -300,7 +300,20 @@ class LanguageState:
                 self.pending_count = 0
                 return Transition(self.current, False, "none", None)
             if self._word_count(utt.text) >= 2 and not is_bare_ack(utt.text):
-                return self._flip(script, "explicit")
+                # One foreign-script sentence is a VOTE, not a flip. The
+                # streaming STT regularly transcribes ENGLISH speech in
+                # Indic script — call 9ed9a612 rendered "I am looking for
+                # 3 BHK" as "ஐ அம் லுக்கிங் ஃபார் 3 பிஹெச்கே" and the old
+                # instant flip sent an English call into Tanglish. A real
+                # switcher produces script on consecutive turns; a one-off
+                # is the STT mishearing.
+                if self.pending_lang == script:
+                    self.pending_count += 1
+                else:
+                    self.pending_lang = script
+                    self.pending_count = 1
+                if self.pending_count >= SWITCH_HYSTERESIS:
+                    return self._flip(script, "explicit")
             # Foreign-script bare ack / one-worder: STT misdetect, keep state.
             return Transition(self.current, False, "none", None)
 

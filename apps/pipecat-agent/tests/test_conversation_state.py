@@ -161,3 +161,33 @@ class TestPhaseDirectives:
         s = ConversationState(phase=phase)
         prompt = system_prompt_addendum(s)
         assert expected_substring in prompt
+
+
+class TestNativeTamilScriptMode:
+    def test_native_pin_active_on_sarvam_stack(self, monkeypatch):
+        monkeypatch.setenv("TTS_PROVIDER", "sarvam")
+        monkeypatch.delenv("TTS_NATIVE_TA", raising=False)
+        s = ConversationState()
+        prompt = system_prompt_addendum(s, language="ta-IN")
+        assert "TAMIL SCRIPT" in prompt
+        assert "ROMAN SCRIPT ONLY" not in prompt
+
+    def test_roman_tanglish_on_other_stacks(self, monkeypatch):
+        monkeypatch.delenv("TTS_PROVIDER", raising=False)
+        s = ConversationState()
+        prompt = system_prompt_addendum(s, language="ta-IN")
+        assert "TANGLISH" in prompt
+        assert "ROMAN SCRIPT ONLY" in prompt
+
+    def test_native_ta_kill_switch(self, monkeypatch):
+        monkeypatch.setenv("TTS_PROVIDER", "sarvam")
+        monkeypatch.setenv("TTS_NATIVE_TA", "0")
+        s = ConversationState()
+        prompt = system_prompt_addendum(s, language="ta-IN")
+        assert "TANGLISH" in prompt
+
+    def test_hindi_gets_colloquial_pin(self, monkeypatch):
+        monkeypatch.delenv("TTS_PROVIDER", raising=False)
+        s = ConversationState()
+        prompt = system_prompt_addendum(s, language="hi-IN")
+        assert "COLLOQUIAL HINGLISH" in prompt

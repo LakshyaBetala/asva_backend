@@ -23,8 +23,23 @@ is high, Priya gets another 180s of runway (call bills as 2 units).
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from enum import Enum
+
+
+def native_tamil_script_enabled() -> bool:
+    """True when Tamil replies should be written in Tamil script.
+
+    Bulbul v3 pronounces native Tamil script far better than romanized
+    Tanglish (romanized text is read with English letter-phonetics —
+    the "Tamil pronunciation is bad" feedback, 2026-06-13). Only active
+    on the all-Sarvam stack; the old smallest/cartesia voices needed
+    Roman text. TTS_NATIVE_TA=0 reverts."""
+    return (
+        os.environ.get("TTS_PROVIDER", "").strip().lower() == "sarvam"
+        and os.environ.get("TTS_NATIVE_TA", "1") != "0"
+    )
 
 
 class Phase(str, Enum):
@@ -288,15 +303,35 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
     """
     parts: list[str] = []
 
-    parts.append(
-        "<format>ROMAN SCRIPT ONLY. 1-2 sentences. "
-        "Never re-introduce yourself or greet again. If the lead asks who "
-        "you are or your name, answer it briefly, then continue.</format>"
-    )
+    native_ta = language == "ta-IN" and native_tamil_script_enabled()
+    if native_ta:
+        parts.append(
+            "<format>1-2 sentences. "
+            "Never re-introduce yourself or greet again. If the lead asks who "
+            "you are or your name, answer it briefly, then continue.</format>"
+        )
+    else:
+        parts.append(
+            "<format>ROMAN SCRIPT ONLY. 1-2 sentences. "
+            "Never re-introduce yourself or greet again. If the lead asks who "
+            "you are or your name, answer it briefly, then continue.</format>"
+        )
 
     # Hard language pin per turn. Critical for Tamil: without this the LLM
     # keeps drifting back to Hindi tokens because the corpus skews that way.
-    if language == "ta-IN":
+    if language == "ta-IN" and native_ta:
+        parts.append(
+            "<LANG_PIN>RESPOND IN TAMIL SCRIPT (தமிழ்) — casual spoken "
+            "Chennai Tamil, the way a broker's assistant actually talks on "
+            "the phone. Spoken forms ALWAYS: வாங்க, பாக்கலாம், சொல்லுங்க, "
+            "இருக்கா, வேணும், பண்ணலாம், கெடைக்கும் — NEVER written/formal "
+            "Tamil (வேண்டும், இருக்கிறது, செய்யலாம் style is banned). "
+            "English business words (BHK, budget, WhatsApp, site visit, "
+            "Saturday, Sunday) stay in English letters inside the Tamil "
+            "sentence. ZERO HINDI TOKENS. Always a comma after the opening "
+            "ack.</LANG_PIN>"
+        )
+    elif language == "ta-IN":
         parts.append(
             "<LANG_PIN>RESPOND IN TANGLISH (Tamil grammar + English business words). "
             "ZERO HINDI TOKENS. Banned: isi, aa jayega, jayega, deti hoon, "
@@ -305,6 +340,7 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
             "sari (not sariyaa), irukku, tharen, pannuren, sollunga, anuppuren, "
             "pesalam, kandippa, evlo. Always comma after the opening ack.</LANG_PIN>"
         )
+    if language == "ta-IN":
         # Override ack filler nudge for Tamil — Hindi fillers sound wrong here.
         ack_nudge_lang = "sari/aama/enna"
         close_hint = (
@@ -346,6 +382,14 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
         )
         ext_hint = "Strong signal. Push for close."
     else:  # hi-IN
+        parts.append(
+            "<LANG_PIN>RESPOND IN COLLOQUIAL HINGLISH (Roman script) — the "
+            "way a broker's assistant talks on the phone: 'aap', 'ji', "
+            "short sentences, everyday words (ghar, flat, dekh lijiye, "
+            "bata dijiye, mil jayega). NEVER textbook shuddh Hindi "
+            "(nivas, awas, kripya are banned). English business words "
+            "(BHK, budget, WhatsApp, site visit) stay as-is.</LANG_PIN>"
+        )
         ack_nudge_lang = "ji/haan/achha"
         close_hint = (
             "Close: 'Matching options isi number pe WhatsApp kar doongi. "

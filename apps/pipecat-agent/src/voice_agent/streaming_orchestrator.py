@@ -18,12 +18,18 @@ module adds a STREAMING alternative consumed by the WS handler.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Mapping, Optional, Protocol
 
-from .conversation_state import ConversationState, Phase, system_prompt_addendum
+from .conversation_state import (
+    ConversationState,
+    Phase,
+    native_tamil_script_enabled,
+    system_prompt_addendum,
+)
 from .language_state import (
     Lang,
     LanguageState,
@@ -314,6 +320,14 @@ _TA_ACK_RE = re.compile(
 )
 
 
+def _ta_pacing_enabled() -> bool:
+    """The ellipsis-pacing hack exists for the OLD Tamil voices (smallest
+    meher / cartesia) that ran clauses together. Bulbul v3 has native Tamil
+    prosody and renders each "..." as a long hole — testers heard them as
+    gaps in the call (2026-06-13). Skip pacing entirely on the Sarvam stack."""
+    return os.environ.get("TTS_PROVIDER", "").strip().lower() != "sarvam"
+
+
 def pace_for_ta_tts(text: str) -> str:
     """Insert breath pauses suitable for Sarvam Tamil TTS.
 
@@ -456,7 +470,7 @@ def prepare_for_tts(
     cleaned = spell_numbers_for_tts(cleaned)
     if pack:
         cleaned = apply_pronunciation_pack(cleaned, pack)
-    if lang == "ta-IN":
+    if lang == "ta-IN" and _ta_pacing_enabled():
         cleaned = pace_for_ta_tts(cleaned)
     return cleaned
 
@@ -484,7 +498,7 @@ def prepare_intro_for_tts(
     out = text.strip()
     if pack:
         out = apply_pronunciation_pack(out, pack)
-    if lang == "ta-IN":
+    if lang == "ta-IN" and _ta_pacing_enabled():
         out = pace_for_ta_tts(out)
     return out
 
@@ -661,18 +675,22 @@ async def run_turn_streaming(
 
     # Sales brain — decide whether to keep digging, close, or exit warmly.
     #
-    #   "buying-ready" = lead has given us at least one hard requirement
-    #   AND surfaced a pain point. That's enough to qualify; further
-    #   discovery is overkill, hand it to the human team via the close.
+    #   "buying-ready" (real estate) = requirement captured (intent +
+    #   BHK/locality live in product_interest) PLUS one more signal —
+    #   a must-have, a timeline, or decent buying confidence. That's a
+    #   bookable site visit; further discovery is dragging (call 9ed9a612:
+    #   rent + Anna Nagar + 3 BHK on the table and Priya kept qualifying
+    #   instead of proposing slots — the lead hung up).
     #
     #   "unproductive" = lead is on-topic but giving nothing back (short
-    #   utterance, no slot info). After 3 of those in a row we exit
+    #   utterance, no slot info). After 5 of those in a row we exit
     #   politely. This prevents Call-1-style 371s dead-end conversations.
+    has_requirement = bool(prior_slots.product_interest)
     has_pain = bool(prior_slots.pain_point)
     has_timeline = prior_slots.timeline_days is not None
-    has_volume = prior_slots.volume_monthly_kg is not None
-    has_supplier_complaint = bool(prior_slots.current_supplier) and has_pain
-    is_buying_ready = has_pain and (has_timeline or has_volume or has_supplier_complaint)
+    is_buying_ready = has_requirement and (
+        has_pain or has_timeline or prior_slots.buying_confidence >= 0.4
+    )
     if is_buying_ready:
         ctx.conversation_state.close_armed = True
 
@@ -1013,25 +1031,31 @@ _DANGLING_END_WORDS: frozenset[str] = frozenset({
 def transcript_unfinished(text: str) -> bool:
     """Heuristic: the lead was probably cut off mid-sentence.
 
-    Either no terminal punctuation at all, or the last word is a dangling
-    connective ("around", "ke", "मैं") even when Sarvam auto-punctuated.
-    The WS handler uses this to hold the turn a little longer; the prompt
-    uses it to ask the lead to finish instead of answering a fragment.
+    The last word is a dangling connective ("around", "ke", "मैं") —
+    nothing else. The WS handler uses this to hold the turn a little
+    longer; the prompt uses it to ask the lead to finish instead of
+    answering a fragment.
+
+    There used to be a second rule — "no terminal punctuation = cut
+    off" — but the streaming STT routinely emits complete finals with
+    no punctuation ("Ya, tell me Priya", "Rent"), so that rule made
+    EVERY turn pay the +700ms dangling hold (call 9ed9a612: 4 of 5
+    turns held for nothing). Punctuation says nothing; the final word
+    does.
     """
     t = (text or "").strip()
     if not t or is_bare_ack(t):
         return False
-    last = t.rstrip(".?!।,…").split()[-1].lower() if t.rstrip(".?!।,…").split() else ""
-    if last in _DANGLING_END_WORDS:
-        return True
-    return not t.endswith((".", "?", "!", "।"))
+    words = t.rstrip(".?!।,…").split()
+    last = words[-1].lower() if words else ""
+    return last in _DANGLING_END_WORDS
 
 
 # Deterministic outlier lines, per language. Synthesised via the phrase cache
 # so repeats are free. Kept SHORT and context-free on purpose — they are safe
 # in any state of the call (unlike the old canned buy-or-rent fallback).
 _REPEAT_LINES = {
-    "ta-IN": "Sorry sir, line clear-aa illa... konjam thirumba sollunga?",
+    "ta-IN": "Sorry sir, line clear-aa illa, konjam thirumba sollunga?",
     "en-IN": "Sorry, the line wasn't clear — could you say that once more?",
     "hi-IN": "Sorry sir, awaaz clear nahin aayi — ek baar phir boliye?",
 }
@@ -1337,11 +1361,18 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
     lead_frustrated = any(k in lead_lc or k in (lead_text or "") for k in _FRUSTRATION_KEYWORDS)
 
     parts = [
-        '[ROMAN SCRIPT ONLY. No Devanagari. No Tamil script.]',
+        (
+            '[Tamil words in TAMIL SCRIPT; English terms (BHK, budget, '
+            'WhatsApp) stay in English letters. No Devanagari.]'
+            if lang == "ta-IN" and native_tamil_script_enabled()
+            else '[ROMAN SCRIPT ONLY. No Devanagari. No Tamil script.]'
+        ),
         # Anti-parrot — the #1 complaint from live calls. "Acknowledge" means
         # 2-4 words, NEVER a restatement of what the lead just told you.
         '[NEVER restate or summarise the lead\'s words back to them '
-        '("aap rent pe dekh rahe hain...", "aapko lagta hai ki..."). They '
+        '("aap rent pe dekh rahe hain...", "aapko lagta hai ki..."), and '
+        'NEVER echo their answer as your ack ("For rent." after they said '
+        'rent / "Anna Nagar." after they named it — banned). They '
         'KNOW what they said. Ack in 2-4 words max, then ANSWER their '
         'question or ask the next NEW thing. VARY the ack — never open two '
         'replies in a row with the same word (rotate: Achha / Sari sir / '
@@ -1688,8 +1719,8 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
             return "\n".join(parts)
 
         # ---- Close NOW (buying signals firm) ----
-        # When the lead has stated a pain AND a hard constraint (timeline /
-        # volume / supplier complaint), more discovery is overkill. Close.
+        # When the requirement is captured plus one more signal (must-have /
+        # timeline / confidence), more discovery is dragging. Book the visit.
         # A pending lead question outranks the scripted close/heat lines —
         # "Say EXACTLY" over an unanswered question reads as a robot.
         if conv.close_armed and conv.consecutive_close_attempts < 1 and not lead_question:

@@ -243,15 +243,32 @@ class TestScriptOverrideGating:
         assert t.switched is False
         assert state.current == Lang.HI
 
-    def test_full_tamil_script_sentence_still_flips_instantly(self):
+    def test_full_tamil_script_needs_two_consecutive_sightings(self):
+        # Call 9ed9a612: English speech transcribed in Tamil script flipped
+        # the call to Tanglish off ONE sentence. Script is now a vote.
         state = LanguageState.initial(Lang.HI)
         t = state.update(utt("எனக்கு அண்ணா நகர்ல வீடு வேணும்", Lang.TA, conf=1.0))
+        assert t.switched is False
+        assert state.current == Lang.HI
+        t = state.update(utt("ரெண்டு பெட்ரூம் போதும் சார்", Lang.TA, conf=1.0))
         assert t.switched is True
         assert state.current == Lang.TA
 
-    def test_full_devanagari_sentence_still_flips_instantly(self):
+    def test_one_off_script_sighting_does_not_flip(self):
+        state = LanguageState.initial(Lang.EN)
+        t = state.update(utt("ஐ அம் லுக்கிங் ஃபார் 3 பிஹெச்கே", Lang.TA, conf=1.0))
+        assert t.switched is False
+        assert state.current == Lang.EN
+        # Next final back in plain English — pending vote must not flip later.
+        t = state.update(utt("monthly budget is fifteen thousand", Lang.EN, conf=1.0))
+        assert t.switched is False
+        assert state.current == Lang.EN
+
+    def test_full_devanagari_needs_two_consecutive_sightings(self):
         state = LanguageState.initial(Lang.EN)
         t = state.update(utt("मुझे किराये पे दो बीएचके चाहिए", Lang.HI, conf=1.0))
+        assert t.switched is False
+        t = state.update(utt("बजट पंद्रह हज़ार महीना है", Lang.HI, conf=1.0))
         assert t.switched is True
         assert state.current == Lang.HI
 
