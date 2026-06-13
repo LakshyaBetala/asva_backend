@@ -785,6 +785,10 @@ async def run_turn_streaming(
                 )
                 if not spoken:
                     continue  # whole sentence was an aside / stage marker
+                if sentence_idx == 0 and _is_echo_ack(spoken, stt_result.transcript):
+                    # More text is still streaming behind this echo —
+                    # dropping it can't leave the turn empty here.
+                    continue
                 if not first_sentence_done:
                     timings["llm_first_sentence_ms"] = int(
                         (time.monotonic() - llm_t0) * 1000
@@ -818,6 +822,10 @@ async def run_turn_streaming(
         transition.current_language.value,
         deps.pronunciation_pack,
     )
+    # Echo-ack guard for the tail: only when something was already spoken —
+    # if the WHOLE reply is the echo, speaking it beats dead air.
+    if tail and sentence_idx > 0 and _is_echo_ack(tail, stt_result.transcript):
+        tail = ""
     if tail and sentence_idx < MAX_SENTENCES_PER_TURN:
         if not first_sentence_done:
             timings["llm_first_sentence_ms"] = int(
@@ -1064,6 +1072,31 @@ _CONTINUE_LINES = {
     "en-IN": "Yes, please go ahead?",
     "hi-IN": "Ji, boliye?",
 }
+
+
+def _is_echo_ack(sentence: str, lead_text: str) -> bool:
+    """True when a SHORT opening sentence is mostly the lead's own words —
+    the LLM echoing their answer back as its ack ("Annanagar." after they
+    said Annanagar, "two BHK." after "do BHK", "fifteen to twentyk." after
+    "15 to 20k"). The prompt bans this; llama ignores the ban (call
+    2b674c4c, every turn). Deterministic guard: drop the sentence instead
+    of speaking it. Numbers are spelled on both sides so "20k" matches
+    "twentyk".
+
+    Bare acks ("Haan ji.", "Theek hai.") are exempt — they're natural
+    fillers even when the lead used the same words."""
+    if is_bare_ack(sentence):
+        return False
+    words = re.findall(r"[a-z0-9]+", spell_numbers_for_tts(sentence.lower()))
+    if not words or len(words) > 4:
+        return False
+    lead_words = set(
+        re.findall(r"[a-z0-9]+", spell_numbers_for_tts((lead_text or "").lower()))
+    )
+    if not lead_words:
+        return False
+    overlap = sum(1 for w in words if w in lead_words)
+    return overlap / len(words) >= 0.5
 
 
 def _text_overlap(a: str, b: str) -> float:

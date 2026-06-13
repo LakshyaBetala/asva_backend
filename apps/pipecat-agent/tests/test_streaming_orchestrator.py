@@ -592,3 +592,29 @@ class TestSentenceAudioEvents:
         assert len(events) == 1
         assert events[0].is_raw_pcm is False
         assert events[0].audio == b"RIFFfakewav"
+
+
+# -- Echo-ack dropper (call 2b674c4c) -----------------------------------------
+
+def test_echo_ack_detection():
+    from voice_agent.streaming_orchestrator import _is_echo_ack
+
+    # llama echoing the lead's answer back as its ack — all from 2b674c4c.
+    assert _is_echo_ack("Right, Annanagar.", "Annanagar Annanagar Hello")
+    assert _is_echo_ack("two BHK.", "2 BHK please")
+    assert _is_echo_ack("fifteen to twentyk.", "15 to 20k")
+    assert _is_echo_ack("For rent.", "I was looking to rent")
+
+
+def test_echo_ack_keeps_real_acks_and_content():
+    from voice_agent.streaming_orchestrator import _is_echo_ack
+
+    assert not _is_echo_ack("Got it.", "15 to 20k")
+    assert not _is_echo_ack("Theek hai.", "సరే ఓకే.")  # no Latin lead words
+    assert not _is_echo_ack("Saturday confirmed sir.", "Saturday")
+    # Long sentences are never "acks" even with overlap.
+    assert not _is_echo_ack(
+        "So two BHK in Annanagar for fifteen to twenty thousand rent.",
+        "2 BHK Annanagar 15 to 20k",
+    )
+    assert not _is_echo_ack("", "anything")

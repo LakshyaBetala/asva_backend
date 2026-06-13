@@ -224,6 +224,14 @@ def _parse_groq_retry_after(msg: str) -> float | None:
     return val / 1000.0 if m.group(2) == "ms" else val
 
 
+# Gemini quota circuit breaker. Free-tier daily-quota 429s don't recover
+# between turns, but the old code retried Gemini on EVERY turn and paid a
+# failed round-trip each time (call 2b674c4c: 10 consecutive 429s). After
+# a quota 429, route straight to Groq until the cooldown passes.
+_GEMINI_QUOTA_COOLDOWN_SEC = 300.0
+_gemini_down_until = 0.0
+
+
 @dataclass
 class _GroqAdapter:
     api_key: str
@@ -250,6 +258,9 @@ class _GroqAdapter:
     alt_base_url: str = ""
     alt_api_key: str = ""
     alt_model: str = ""
+    # Process-wide Gemini quota circuit breaker lives at module scope
+    # (below the class) — adapters are rebuilt per call, the cooldown
+    # must survive them.
     # When True, Gemini handles the conversation turns and Groq becomes the
     # fallback (extraction stays on Groq either way). Set LLM_PRIMARY=gemini.
     # Why: llama-3.3-70b parrots quoted directive examples verbatim and
@@ -278,9 +289,10 @@ class _GroqAdapter:
         410ms"). When that wait is short, sleeping it out and retrying Groq
         beats switching providers — call 21c9952b paid 5.7-6.3s for Gemini
         fallbacks that a sub-second retry would have avoided."""
+        global _gemini_down_until
         if self.gemini_primary:
             g_key = self.fallback_gemini_key or self.gemini_key
-            if g_key:
+            if g_key and time.monotonic() >= _gemini_down_until:
                 got_gemini_chunk = False
                 try:
                     async for chunk in gemini_stream(
@@ -297,9 +309,22 @@ class _GroqAdapter:
                     if got_gemini_chunk:
                         # Already speaking — don't switch providers mid-sentence.
                         raise
-                    logger.warning(
-                        "gemini primary failed (%s); falling back to groq", exc
-                    )
+                    msg = str(exc).lower()
+                    if "429" in msg or "quota" in msg or "rate limit" in msg:
+                        # Quota exhaustion doesn't recover turn-to-turn —
+                        # call 2b674c4c paid a failed Gemini round-trip on
+                        # EVERY turn. Stop trying for a while.
+                        _gemini_down_until = (
+                            time.monotonic() + _GEMINI_QUOTA_COOLDOWN_SEC
+                        )
+                        logger.warning(
+                            "gemini quota exhausted — using groq for the next "
+                            "%.0fs (%s)", _GEMINI_QUOTA_COOLDOWN_SEC, exc,
+                        )
+                    else:
+                        logger.warning(
+                            "gemini primary failed (%s); falling back to groq", exc
+                        )
         first_chunk = True
         retried = False
         last_exc: GroqError | None = None
