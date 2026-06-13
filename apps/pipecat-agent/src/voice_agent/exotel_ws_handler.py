@@ -303,15 +303,31 @@ def _audio_dur_sec(pcm: bytes, sample_rate: int) -> float:
 _streaming_tts: Any = None
 
 
+def _tts_pace() -> float:
+    """Bulbul speaking pace. >1.0 tightens inter-word gaps (default 1.1 —
+    1.0 read drawn-out/robotic on sales calls, feedback 2026-06-13).
+    Tune by ear via SARVAM_TTS_PACE; 1.0 restores Bulbul default."""
+    try:
+        return float(os.environ.get("SARVAM_TTS_PACE", "1.1"))
+    except ValueError:
+        return 1.1
+
+
 def _get_streaming_tts(api_key: str, speaker: str):
     global _streaming_tts
-    if _streaming_tts is None or _streaming_tts.speaker != speaker:
+    pace = _tts_pace()
+    if (
+        _streaming_tts is None
+        or _streaming_tts.speaker != speaker
+        or _streaming_tts.pace != pace
+    ):
         from .sarvam_tts_ws import SarvamStreamingTTS
 
         _streaming_tts = SarvamStreamingTTS(
             api_key=api_key,
             speaker=speaker,
             sample_rate=EXOTEL_STREAM_SAMPLE_RATE,
+            pace=pace,
         )
     return _streaming_tts
 

@@ -132,3 +132,25 @@ def test_synth_assembles_full_wav():
 def test_empty_text_yields_nothing():
     tts = SarvamStreamingTTS(api_key="k", speaker="priya", sample_rate=8000)
     assert _collect(tts.synth_stream("   ", "hi-IN")) == []
+
+
+def test_configure_sends_pace_when_nondefault():
+    import asyncio
+    tts = SarvamStreamingTTS(api_key="k", speaker="priya", sample_rate=8000, pace=1.1)
+    fake = _FakeWS([b"\x00\x00" * 50])
+    tts._ws = fake
+    asyncio.run(_run_collect(tts, "test", "hi-IN"))
+    assert fake.configured[0].get("pace") == 1.1
+
+
+def test_configure_omits_pace_at_default():
+    import asyncio
+    tts = SarvamStreamingTTS(api_key="k", speaker="priya", sample_rate=8000, pace=1.0)
+    fake = _FakeWS([b"\x00\x00" * 50])
+    tts._ws = fake
+    asyncio.run(_run_collect(tts, "test", "hi-IN"))
+    assert "pace" not in fake.configured[0]
+
+
+async def _run_collect(tts, text, lang):
+    return [c async for c in tts.synth_stream(text, lang)]

@@ -86,12 +86,14 @@ class SarvamStreamingTTS:
         sample_rate: int = 8000,
         model: str = DEFAULT_MODEL,
         min_buffer_size: int = DEFAULT_MIN_BUFFER_SIZE,
+        pace: float = 1.0,
     ) -> None:
         self.api_key = api_key
         self.speaker = speaker
         self.sample_rate = sample_rate
         self.model = model
         self.min_buffer_size = min_buffer_size
+        self.pace = pace
         self._lock = asyncio.Lock()
         self._cm = None  # the connect() async context manager
         self._ws = None
@@ -146,6 +148,11 @@ class SarvamStreamingTTS:
             output_audio_codec="wav",
             min_buffer_size=self.min_buffer_size,
         )
+        if self.pace and self.pace != 1.0:
+            # Slightly faster than 1.0 tightens inter-word gaps — Bulbul at
+            # default speed reads drawn-out/robotic on a sales call
+            # (feedback 2026-06-13). Tunable via SARVAM_TTS_PACE.
+            cfg["pace"] = self.pace
         dict_id = default_dict_id()
         if dict_id:
             cfg["dict_id"] = dict_id
@@ -214,7 +221,7 @@ class SarvamStreamingTTS:
         # the WAV container so the contract stays "raw PCM at sample_rate".
         result = await rest_synthesize(
             text=text, lang=lang, api_key=self.api_key,
-            speaker=self.speaker, sample_rate=self.sample_rate,
+            speaker=self.speaker, sample_rate=self.sample_rate, pace=self.pace,
         )
         pcm, sr = wav_to_pcm16(result.audio)
         yield pcm16_resample(pcm, sr, self.sample_rate)
