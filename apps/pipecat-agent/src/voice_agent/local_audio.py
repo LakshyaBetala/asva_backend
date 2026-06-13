@@ -230,6 +230,12 @@ def _parse_groq_retry_after(msg: str) -> float | None:
 # a quota 429, route straight to Groq until the cooldown passes.
 _GEMINI_QUOTA_COOLDOWN_SEC = 300.0
 _gemini_down_until = 0.0
+# Same breaker for Groq's DAILY token cap (TPD) — once it's gone it's gone
+# for ~hours, but call be21ced9 paid a Groq 429 round-trip on every single
+# turn before hopping to Cerebras. Minute-level (TPM) 429s do NOT trip
+# this — those recover in seconds and are handled by the retry below.
+_GROQ_TPD_COOLDOWN_SEC = 600.0
+_groq_down_until = 0.0
 
 
 @dataclass
@@ -325,10 +331,11 @@ class _GroqAdapter:
                         logger.warning(
                             "gemini primary failed (%s); falling back to groq", exc
                         )
+        global _groq_down_until
         first_chunk = True
         retried = False
         last_exc: GroqError | None = None
-        while True:
+        while time.monotonic() >= _groq_down_until:
             try:
                 async for chunk in groq_stream(
                     system_message=system_message,
@@ -347,6 +354,14 @@ class _GroqAdapter:
                     "429" in msg or "rate limit" in msg or "tokens per day" in msg
                     or "500" in msg or "502" in msg or "503" in msg or "504" in msg
                 )
+                if "tokens per day" in msg or "tpd" in msg:
+                    # Daily cap — gone for hours; stop paying the failed
+                    # round-trip on every turn (call be21ced9).
+                    _groq_down_until = time.monotonic() + _GROQ_TPD_COOLDOWN_SEC
+                    logger.warning(
+                        "groq daily cap hit — routing to alt/gemini for the "
+                        "next %.0fs", _GROQ_TPD_COOLDOWN_SEC,
+                    )
                 wait = _parse_groq_retry_after(msg)
                 if (
                     transient and first_chunk and not retried

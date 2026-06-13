@@ -641,3 +641,49 @@ def test_canned_lines_roman_on_other_stacks(monkeypatch):
     monkeypatch.delenv("TTS_PROVIDER", raising=False)
     assert _repeat_line("hi-IN").startswith("Sorry sir, awaaz")
     assert _repeat_line("ta-IN").startswith("Sorry sir, line clear-aa")
+
+
+# -- Visit-slot memory (call be21ced9: Saturday asked 4x) ---------------------
+
+class TestVisitSlotMemory:
+    @staticmethod
+    def _conv_with_priya(line):
+        from voice_agent.conversation_state import ConversationState
+
+        conv = ConversationState()
+        conv.record_priya_turn(line)
+        return conv
+
+    def test_day_answer_after_slot_offer_is_captured(self):
+        from voice_agent.streaming_orchestrator import _lead_chose_visit_slot
+
+        conv = self._conv_with_priya("Site visit Saturday या Sunday?")
+        assert _lead_chose_visit_slot("सैटरडे सुबह।", conv)
+        assert _lead_chose_visit_slot("Sure, I can visit on Saturday.", conv)
+        assert _lead_chose_visit_slot("సాటర్డే సుదా.", conv)  # Telugu-script STT
+
+    def test_day_word_without_slot_offer_is_ignored(self):
+        from voice_agent.streaming_orchestrator import _lead_chose_visit_slot
+
+        conv = self._conv_with_priya("Aap kaunsa area dekh rahe hain?")
+        assert not _lead_chose_visit_slot("Saturday ko free hoon", conv)
+
+    def test_chosen_slot_injects_confirm_directive(self):
+        from voice_agent.streaming_orchestrator import _format_user_message
+
+        conv = self._conv_with_priya("Site visit Saturday ya Sunday?")
+        conv.visit_slot_text = "सैटरडे सुबह।"
+        msg = _format_user_message(
+            "haan", QualificationSlots(), conv, lang="hi-IN", intent="normal"
+        )
+        assert "ALREADY chose the site-visit slot" in msg
+        assert "सैटरडे सुबह" in msg
+
+
+def test_long_number_echo_is_dropped():
+    from voice_agent.streaming_orchestrator import _is_echo_ack
+
+    assert _is_echo_ack(
+        "thirty five se forty five hazaar tak.",
+        "budget thirty five to forty five thousand",
+    )

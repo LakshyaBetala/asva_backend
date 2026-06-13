@@ -674,6 +674,11 @@ async def run_turn_streaming(
     elif intent == "normal":
         ctx.conversation_state.backchannel_count = 0
 
+    if intent in ("normal", "backchannel") and _lead_chose_visit_slot(
+        stt_result.transcript, ctx.conversation_state
+    ):
+        ctx.conversation_state.visit_slot_text = stt_result.transcript.strip()
+
     # Sales brain — decide whether to keep digging, close, or exit warmly.
     #
     #   "buying-ready" (real estate) = requirement captured (intent +
@@ -1118,16 +1123,25 @@ def _is_echo_ack(sentence: str, lead_text: str) -> bool:
     fillers even when the lead used the same words."""
     if is_bare_ack(sentence):
         return False
-    words = re.findall(r"[a-z0-9]+", spell_numbers_for_tts(sentence.lower()))
-    if not words or len(words) > 4:
+    words = re.findall(r"\w+", spell_numbers_for_tts(sentence.lower()))
+    if not words:
         return False
     lead_words = set(
-        re.findall(r"[a-z0-9]+", spell_numbers_for_tts((lead_text or "").lower()))
+        re.findall(r"\w+", spell_numbers_for_tts((lead_text or "").lower()))
     )
     if not lead_words:
         return False
     overlap = sum(1 for w in words if w in lead_words)
-    return overlap / len(words) >= 0.5
+    # Short echoes ("two BHK.") need half their words shared; longer ones
+    # ("thirty five se forty five hazaar tak." — 7 words, 4 shared after
+    # number spelling, call be21ced9) get a 0.55 bar — high enough that a
+    # real confirmation ("Saturday subah ten baje pakka sir?" = 0.33
+    # overlap) never trips it.
+    if len(words) <= 4:
+        return overlap / len(words) >= 0.5
+    if len(words) <= 7:
+        return overlap / len(words) >= 0.55
+    return False
 
 
 def _text_overlap(a: str, b: str) -> float:
@@ -1327,6 +1341,29 @@ _QUESTION_WORDS = frozenset({
 })
 
 
+# Day words across scripts — the lead picking a visit day. STT renders
+# English day names in whatever script it fancies ("సాటర్డే", "सैटरडे").
+_VISIT_DAY_RE = re.compile(
+    r"saturday|sunday|सैटरडे|सैलरडे|सेटरडे|संडे|शनिवार|रविवार|"
+    r"சனிக்கிழமை|சனி |ஞாயிறு|సాటర్డే|సండే|శనివారం|ఆదివారం",
+    re.IGNORECASE,
+)
+
+
+def _lead_chose_visit_slot(text: str, conv) -> bool:
+    """True when the lead names a day while Priya has been proposing visit
+    slots. That answer must STICK — site_visit isn't an extractor slot, so
+    without this Priya re-offers the same choice forever (call be21ced9)."""
+    if not text or not _VISIT_DAY_RE.search(text):
+        return False
+    recent = " ".join(conv.recent_priya_turns[-3:]).lower()
+    return (
+        "saturday" in recent or "sunday" in recent or "site visit" in recent
+        or "சனி" in recent or "ஞாயி" in recent
+        or "शनिवार" in recent or "संडे" in recent or "सैटरडे" in recent
+    )
+
+
 def _lead_asked_question(text: str) -> bool:
     """True when the lead's utterance is (or contains) a question."""
     t = (text or "").strip()
@@ -1487,6 +1524,16 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
     # Tester feedback (2026-06-12): the call felt like a one-way Q&A; when
     # the lead asked anything mid-flow, Priya ignored it and fired her next
     # qualifier. Nothing kills trust faster than an unanswered question.
+    slot_chosen = bool(getattr(conv, "visit_slot_text", ""))
+    if slot_chosen and intent in ("normal", "backchannel"):
+        parts.append(
+            f'[The lead ALREADY chose the site-visit slot — their words: '
+            f'"{conv.visit_slot_text}". Do NOT offer day/time choices '
+            'again. CONFIRM that exact slot in one short sentence, say the '
+            'property details + confirmation will come on WhatsApp, thank '
+            'them and wind up. Asking the day again = the lead hangs up.]'
+        )
+
     lead_question = intent in ("normal", "backchannel") and _lead_asked_question(_lt)
     if lead_question:
         parts.append(
@@ -1863,7 +1910,12 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         # timeline / confidence), more discovery is dragging. Book the visit.
         # A pending lead question outranks the scripted close/heat lines —
         # "Say EXACTLY" over an unanswered question reads as a robot.
-        if conv.close_armed and conv.consecutive_close_attempts < 1 and not lead_question:
+        if (
+            conv.close_armed
+            and conv.consecutive_close_attempts < 1
+            and not lead_question
+            and not slot_chosen  # slot picked → confirm path, not a re-offer
+        ):
             if lang == "ta-IN":
                 close_phrase = (
                     "சரி sir, matching properties இந்த number-கு WhatsApp-ல "
@@ -1897,7 +1949,11 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         # heat instantly — hot leads get closed in the next sentence, warm
         # leads get ONE pain probe, cold leads get a warm goodbye. We surface
         # the heat here so Priya's next line matches the room.
-        temperature = "unknown" if lead_question else slots.live_temperature(turn_idx=turn)
+        temperature = (
+            "unknown"
+            if (lead_question or slot_chosen)
+            else slots.live_temperature(turn_idx=turn)
+        )
         if temperature == "hot":
             if lang == "ta-IN":
                 heat_directive = (

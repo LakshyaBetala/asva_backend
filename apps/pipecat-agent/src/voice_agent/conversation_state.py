@@ -156,6 +156,12 @@ class ConversationState:
     # do its best, so a noisy line never becomes a "can you repeat?" loop.
     repeat_request_count: int = 0
 
+    # The lead's own words choosing a site-visit slot ("सैटरडे सुबह").
+    # site_visit isn't one of the extractor's slots, so without this Priya
+    # had no memory of the choice and re-offered "Saturday ya Sunday?"
+    # FOUR times in call be21ced9 — lead: "मैम पागल हो गया मैम".
+    visit_slot_text: str = ""
+
     # Phase entry timestamps for telemetry + debugging.
     phase_entered_at: dict[Phase, float] = field(default_factory=dict)
 
@@ -414,9 +420,11 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
                 "WRONG (shuddh, banned): 'आप कितना व्यय करना चाहते हैं?' / "
                 "'कृपया अपना निवास स्थान बताइए.'\n"
                 "Everyday words only (घर, दिखा दूँगी, मिल जाएगा, बता दीजिए); "
-                "निवास/आवास/कृपया banned. English business words (BHK, "
-                "budget, WhatsApp, site visit, Saturday) stay in English "
-                "letters inside the sentence.</LANG_PIN>"
+                "निवास/आवास/कृपया banned. You are FEMALE — always समझ गई / "
+                "कर दूँगी / पूछ रही हूँ, NEVER समझ गया / पूछ रहा हूँ. "
+                "English business words (BHK, budget, WhatsApp, site visit, "
+                "Saturday) stay in English letters inside the "
+                "sentence.</LANG_PIN>"
             )
         else:
             parts.append(

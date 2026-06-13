@@ -160,7 +160,7 @@ Output ONLY valid JSON matching the schema below. No prose, no markdown fences.
 Fields you must output (use null for not-yet-known):
 
 {
-  "product_interest": string|null,        // what they want: BHK + locality + buy/rent, e.g. "2 BHK Adyar, buy"
+  "product_interest": string|null,        // what they want: BHK + locality + buy/rent + BUDGET if stated, e.g. "2 BHK Adyar, rent, 35-45k/month". ALWAYS fold a stated budget in here — leads explode when re-asked ("abhi to bola 35,000!")
   "volume_monthly_kg": integer|null,      // NOT USED for real estate — always null
   "buying_frequency": "one_off"|"monthly"|"ad_hoc"|"unknown",  // real estate is "one_off"
   "current_supplier": string|null,        // other broker they're already working with, if any
