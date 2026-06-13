@@ -305,3 +305,36 @@ class TestExplicitFlipPhrases:
         t = state.update(utt("english please", Lang.TA, conf=1.0))
         assert t.switched is True
         assert state.current == Lang.EN
+
+
+class TestSpellingRobustSwitch:
+    """Call b850a198/2809a134: lead asked to switch in script spellings the
+    fixed trigger list missed, so the call never switched."""
+
+    def _flip(self, start, text):
+        s = LanguageState.initial(start)
+        t = s.update(utt(text, start, conf=1.0))
+        return t.switched, s.current
+
+    def test_tamil_script_english_request_flips(self):
+        sw, cur = self._flip(Lang.TA, "நம்ம இங்கிலீஷில் பேசலாம்")
+        assert sw and cur == Lang.EN
+
+    def test_tamil_script_hindi_request_flips(self):
+        sw, cur = self._flip(Lang.TA, "கேன் யூ ப்ளீஸ் டாக் அன் ஹிந்தி?")
+        assert sw and cur == Lang.HI
+
+    def test_devanagari_tamil_request_flips(self):
+        sw, cur = self._flip(Lang.HI, "तुम तमिल में बोल सकते हो ना")
+        assert sw and cur == Lang.TA
+
+    def test_plain_answer_does_not_flip(self):
+        sw, cur = self._flip(Lang.HI, "मैं अन्ना नगर में देख रहा हूँ")
+        assert not sw and cur == Lang.HI
+
+    def test_language_name_without_cue_does_not_flip(self):
+        # Mentioning a language in passing (long sentence, no request cue).
+        sw, cur = self._flip(
+            Lang.EN, "my cousin studies tamil literature at a college somewhere"
+        )
+        assert not sw

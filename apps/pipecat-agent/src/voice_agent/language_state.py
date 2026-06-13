@@ -227,6 +227,44 @@ _TRIGGER_PHRASES: dict[Lang, tuple[str, ...]] = {
 }
 
 
+# Spelling-robust language-request detection. Fixed _TRIGGER_PHRASES miss
+# STT spelling variants (இங்கிலீஷில் vs இங்கிலீஷ்ல, ingilish vs english);
+# this matches a language NAME stem in ANY script + a "speak/talk/change"
+# cue, so "English-la sollunga", "हिंदी में बोल", "தமிழ்ல பேசுங்க",
+# "can we continue in english" all flip. Cue required to avoid false
+# positives like "I read a Tamil paper".
+_LANG_NAME_RE: dict[Lang, "re.Pattern[str]"] = {
+    Lang.EN: re.compile(r"english|ingl|ஆங்கில|இங்கில|இங்லீ|अंग्रेज|इंग्ल|इंगल", re.I),
+    Lang.HI: re.compile(r"hindi|हिंदी|हिन्दी|இந்தி|ஹிந்தி|हिंद", re.I),
+    Lang.TA: re.compile(r"tamil|tamizh|தமிழ|தமில|तमिल|तमिळ", re.I),
+}
+_LANG_REQUEST_CUE_RE = re.compile(
+    r"pes|sollu|sollung|bol|baat|talk|speak|continue|chang|maath|maatu|"
+    r"please|chahiye|switch|बोल|बात|करो|कर दो|में|पेसु|"
+    # Tamil script: சொல்லு (tell), பேச (speak), மாற்/மாத்து (change),
+    # பண்ண (do), + Tamil-script English loans ப்ளீஸ்/டாக்/ஸ்பீக். (No bare
+    # "-la/-il" locative cue — "il\b" matched the END of "tamil" itself and
+    # over-triggered; real requests carry a verb cue or are short anyway.)
+    r"சொல்லு|பேச|மாத்து|மாற்|பண்ண|ப்ளீஸ்|டாக்|ஸ்பீக்",
+    re.I,
+)
+
+
+def _detect_lang_request(text: str, current: "Lang") -> "Lang | None":
+    if not text:
+        return None
+    low = text.lower()
+    has_cue = bool(_LANG_REQUEST_CUE_RE.search(text)) or len(low.split()) <= 4
+    if not has_cue:
+        return None
+    for lang, name_re in _LANG_NAME_RE.items():
+        if lang == current:
+            continue
+        if name_re.search(text):
+            return lang
+    return None
+
+
 # Smooth bridge phrases — said in the OLD language before switching to the
 # new one. Avoids the jarring snap of mid-sentence language flip.
 _BRIDGE_PHRASES: dict[tuple[Lang, Lang], str] = {
@@ -281,7 +319,11 @@ class LanguageState:
             for p in phrases:
                 if p in normalized:
                     return lang
-        return None
+        # Spelling-robust fallback: a language NAME (any script/spelling) +
+        # a request cue. Fixed phrases miss STT spelling variants — call
+        # b850a198 the lead said "நம்ம இங்கிலீஷில் பேசலாம்" / "English-la
+        # sollunga" and neither matched, so the call never switched.
+        return _detect_lang_request(text, self.current)
 
     def _flip(self, to: Lang, trigger: Literal["hysteresis", "explicit"]) -> Transition:
         prev = self.current
