@@ -714,7 +714,9 @@ async def run_turn_streaming(
     #   "unproductive" = lead is on-topic but giving nothing back (short
     #   utterance, no slot info). After 5 of those in a row we exit
     #   politely. This prevents Call-1-style 371s dead-end conversations.
-    has_requirement = bool(prior_slots.product_interest)
+    # Bookable = locality or BHK known (not bare "rent"/"buy") — a broker
+    # can't send matching listings or book a worthwhile visit without it.
+    has_requirement = _requirement_bookable(prior_slots.product_interest)
     has_pain = bool(prior_slots.pain_point)
     has_timeline = prior_slots.timeline_days is not None
     is_buying_ready = has_requirement and (
@@ -971,6 +973,21 @@ _PROPERTY_SCRIPT_RE = re.compile(
 _LOCALITY_TOKENS = frozenset(
     name.lower() for names in LOCALITIES.values() for name in names
 ) | frozenset(LOCALITY_ALIASES.keys())
+
+
+def _requirement_bookable(product_interest: str | None) -> bool:
+    """A site visit is only worth booking once we know WHERE (locality) or
+    WHAT SIZE (BHK) — a broker can't send matching listings for bare 'rent'
+    or 'buy'. Gates the close so it doesn't fire on intent alone (call
+    22c86781: Priya offered a visit after the lead only said 'rent plan',
+    booking with no area/BHK/budget). Once a locality or BHK lands, it's
+    bookable — so this does NOT reintroduce dragging."""
+    if not product_interest:
+        return False
+    pi = product_interest.lower()
+    if "bhk" in pi or "bed" in pi:
+        return True
+    return any(loc in pi for loc in _LOCALITY_TOKENS)
 
 
 def _mentions_property_info(text: str | None) -> bool:

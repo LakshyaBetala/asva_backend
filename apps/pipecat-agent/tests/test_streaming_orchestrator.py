@@ -751,3 +751,20 @@ def test_numbers_stay_digits_in_native_mode(monkeypatch):
     assert "9" in out and "nine" not in out
     # Roman path still spells out for the English voice.
     assert "nine" in prepare_for_tts("visit at 9", "en-IN")
+
+
+# -- Close gate: don't book on bare intent (call 22c86781) --------------------
+
+def test_requirement_bookable_needs_locality_or_bhk():
+    from voice_agent.streaming_orchestrator import _requirement_bookable
+    # Bare intent → NOT bookable (no area/BHK to send listings for).
+    assert not _requirement_bookable("rent")
+    assert not _requirement_bookable("rent plan")
+    assert not _requirement_bookable("buy")
+    assert not _requirement_bookable(None)
+    assert not _requirement_bookable("")
+    # Locality or BHK present → bookable (close may arm).
+    assert _requirement_bookable("3 BHK")
+    assert _requirement_bookable("rent in Adyar")
+    assert _requirement_bookable("2 BHK Anna Nagar rent")
+    assert _requirement_bookable("rent, Velachery")
