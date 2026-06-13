@@ -481,7 +481,13 @@ def prepare_for_tts(
     cleaned = sanitize_for_tts(text)
     if not cleaned:
         return cleaned
-    cleaned = spell_numbers_for_tts(cleaned)
+    # Number spelling ("2000"→"two thousand") is for ROMAN output — inside a
+    # Devanagari/Tamil sentence it produced English words next to native text
+    # ("nine बजे" → heard as "9 bhajay", call 287e6c4d). In native mode keep
+    # the digits; Sarvam's enable_preprocessing reads them in-language
+    # ("9 बजे" → "नौ बजे").
+    if not _native_script_for(lang):
+        cleaned = spell_numbers_for_tts(cleaned)
     if pack:
         cleaned = apply_pronunciation_pack(cleaned, pack)
     if lang == "ta-IN" and _ta_pacing_enabled():
@@ -1245,6 +1251,14 @@ _CLOSE_WORDS = [
     # Drop-it / never mind
     "rehne do", "chodo", "chod do", "chhod do", "chhodo",
     "skip karo", "skip kar do",
+    # NATIVE SCRIPT — pinned STT now returns Devanagari/Tamil, so the romanized
+    # forms above never matched and the call wouldn't end (call 287e6c4d: lead
+    # said "ठीक है, थैंक यू" and Priya kept talking).
+    "थैंक यू", "थैंक्यू", "धन्यवाद", "थैंक यू बाय", "बाय",
+    "भेज दीजिए", "भेज दो", "भेज दीजिये", "व्हाट्सएप में भेज", "व्हाट्सएप पे भेज",
+    "व्हाट्सएप पर भेज", "देख लूँगा", "देख लेता", "देख लेंगे", "देख लूंगा",
+    "ठीक है थैंक", "ठीक है बाय",
+    "நன்றி", "சரி நன்றி", "போதும்", "அனுப்புங்க", "வாட்ஸ்அப்ல அனுப்பு",
 ]
 _REJECT_WORDS = [
     "not interested", "interested nahi", "nahi chahiye", "nahin chahiye",
@@ -1356,25 +1370,39 @@ _QUESTION_WORDS = frozenset({
 
 # Day words across scripts — the lead picking a visit day. STT renders
 # English day names in whatever script it fancies ("సాటర్డే", "सैटरडे").
+# ANY weekday the lead might pick, across scripts + STT spelling variants.
+# Call 287e6c4d: regex had only "सैटरडे" but STT wrote "साटरडे", and Monday
+# ("मंडे") wasn't listed at all — so the chosen day was never captured and
+# Priya re-offered "Saturday ya Sunday" forever. Stems (शनि, सैटर/साटर/सेटर,
+# मंडे/सोमवार…) are spelling-robust on purpose.
 _VISIT_DAY_RE = re.compile(
-    r"saturday|sunday|सैटरडे|सैलरडे|सेटरडे|संडे|शनिवार|रविवार|"
-    r"சனிக்கிழமை|சனி |ஞாயிறு|సాటర్డే|సండే|శనివారం|ఆదివారం",
+    r"monday|mande|मंडे|मनडे|सोमवार|திங்க|"
+    r"tuesday|ट्यूज|मंगल|செவ்வாய|"
+    r"wednesday|बुध|புதன|"
+    r"thursday|गुरु|बृहस्पति|வியாழ|"
+    r"friday|फ्राइडे|शुक्र|வெள்ளி|"
+    r"saturday|satar|सैटर|साटर|सेटर|शनि|சனி|సాటర్డే|శనివారం|"
+    r"sunday|sande|संडे|सन्डे|रवि|ஞாயி|సండే|ఆదివారం|సోమవారం|"
+    r"समय|टाइम",
+    re.IGNORECASE,
+)
+# Tokens that show Priya was proposing/confirming a visit slot — gates the
+# day capture so a stray day word elsewhere doesn't trigger it.
+_VISIT_CONTEXT_RE = re.compile(
+    r"visit|विज़िट|विजिट|விசிட்|site|साइट|समय|time|कब|day|बजे|நேரம்",
     re.IGNORECASE,
 )
 
 
 def _lead_chose_visit_slot(text: str, conv) -> bool:
-    """True when the lead names a day while Priya has been proposing visit
-    slots. That answer must STICK — site_visit isn't an extractor slot, so
-    without this Priya re-offers the same choice forever (call be21ced9)."""
+    """True when the lead names a day/time while Priya has been proposing
+    visit slots. That answer must STICK — site_visit isn't an extractor
+    slot, so without this Priya re-offers the same choice forever
+    (calls be21ced9, 287e6c4d)."""
     if not text or not _VISIT_DAY_RE.search(text):
         return False
-    recent = " ".join(conv.recent_priya_turns[-3:]).lower()
-    return (
-        "saturday" in recent or "sunday" in recent or "site visit" in recent
-        or "சனி" in recent or "ஞாயி" in recent
-        or "शनिवार" in recent or "संडे" in recent or "सैटरडे" in recent
-    )
+    recent = " ".join(conv.recent_priya_turns[-3:])
+    return bool(_VISIT_CONTEXT_RE.search(recent))
 
 
 def _lead_asked_question(text: str) -> bool:
@@ -1471,6 +1499,9 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         "bore", "irritate", "pareshaan kar", "same thing again",
         "repeating the same", "rakh raha", "rakh deta", "रख दो", "रख रहा",
         "phone vai", "vei da", "madhupadi", "thirupi thirupi",
+        # Devanagari frustration seen on pinned-STT calls (287e6c4d):
+        "पागल", "क्या हो गया", "फिर से फिर", "रिपीट क्यों", "समझा नहीं",
+        "क्या बोल रहे", "क्या बोलना चाह",
     )
     lead_frustrated = any(k in lead_lc or k in (lead_text or "") for k in _FRUSTRATION_KEYWORDS)
 

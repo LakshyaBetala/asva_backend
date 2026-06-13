@@ -356,7 +356,9 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
             "இல்லை; வேணும் not வேண்டும். English business words (BHK, "
             "budget, WhatsApp, site visit, Saturday) stay in English "
             "letters. ZERO HINDI TOKENS (subah, bilkul, theek are Hindi — "
-            "banned). Always a comma after the opening ack.</LANG_PIN>"
+            "banned). Times/numbers in Tamil or digits ('ஒன்பது மணி' or "
+            "'9 மணி'), never 'nine மணி'. Always a comma after the opening "
+            "ack.</LANG_PIN>"
         )
     elif language == "ta-IN":
         parts.append(
@@ -423,8 +425,9 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
                 "निवास/आवास/कृपया banned. You are FEMALE — always समझ गई / "
                 "कर दूँगी / पूछ रही हूँ, NEVER समझ गया / पूछ रहा हूँ. "
                 "English business words (BHK, budget, WhatsApp, site visit, "
-                "Saturday) stay in English letters inside the "
-                "sentence.</LANG_PIN>"
+                "Saturday) stay in English letters inside the sentence. "
+                "Times/numbers in Hindi or digits — 'नौ बजे' or '9 बजे', "
+                "NEVER 'nine बजे'.</LANG_PIN>"
             )
         else:
             parts.append(

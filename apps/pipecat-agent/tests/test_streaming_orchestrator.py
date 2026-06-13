@@ -705,3 +705,49 @@ def test_sanitize_strips_lang_markup_tags():
     )
     # Real angle-free text and Devanagari untouched.
     assert sanitize_for_tts("नमस्ते sir, 2 BHK?") == "नमस्ते sir, 2 BHK?"
+
+
+# -- Call 287e6c4d: day capture (all days), native close, numbers -------------
+
+class TestVisitSlotAllDays:
+    @staticmethod
+    def _conv():
+        from voice_agent.conversation_state import ConversationState
+        c = ConversationState()
+        c.record_priya_turn("Saturday subah ya Sunday, visit kab better hai?")
+        return c
+
+    def test_monday_devanagari_is_captured(self):
+        from voice_agent.streaming_orchestrator import _lead_chose_visit_slot
+        assert _lead_chose_visit_slot("मंडे कर दीजिए", self._conv())
+        assert _lead_chose_visit_slot("सोमवार सुबह", self._conv())
+
+    def test_saturday_spelling_variant_is_captured(self):
+        from voice_agent.streaming_orchestrator import _lead_chose_visit_slot
+        # STT wrote "साटरडे" (ा) not "सैटरडे" (ै) — old regex missed it.
+        assert _lead_chose_visit_slot("साटरडे को", self._conv())
+
+    def test_day_without_visit_context_ignored(self):
+        from voice_agent.conversation_state import ConversationState
+        from voice_agent.streaming_orchestrator import _lead_chose_visit_slot
+        c = ConversationState()
+        c.record_priya_turn("Aap kaunsa area dekh rahe hain?")
+        assert not _lead_chose_visit_slot("मंडे", c)
+
+
+def test_native_script_close_words_end_call():
+    from voice_agent.conversation_state import ConversationState
+    from voice_agent.streaming_orchestrator import classify_lead_intent
+    assert classify_lead_intent("ठीक है, थैंक यू", ConversationState()) == "close"
+    assert classify_lead_intent("आप व्हाट्सएप में भेज दीजिए", ConversationState()) == "close"
+    assert classify_lead_intent("நன்றி", ConversationState()) == "close"
+
+
+def test_numbers_stay_digits_in_native_mode(monkeypatch):
+    from voice_agent.streaming_orchestrator import prepare_for_tts
+    monkeypatch.setenv("TTS_PROVIDER", "sarvam")
+    monkeypatch.delenv("TTS_NATIVE_HI", raising=False)
+    out = prepare_for_tts("Saturday 9 बजे?", "hi-IN")
+    assert "9" in out and "nine" not in out
+    # Roman path still spells out for the English voice.
+    assert "nine" in prepare_for_tts("visit at 9", "en-IN")

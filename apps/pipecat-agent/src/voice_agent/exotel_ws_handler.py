@@ -555,6 +555,7 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
     silence_ms = 0
     buffered_ms = 0
     voiced_ms = 0  # how much actual (non-silent) speech is in the buffer
+    client_gone = False  # set when the lead hangs up mid-reply (send fails)
     barge_voiced_ms = 0  # loud speech heard *while Priya is talking* (barge-in)
     # Wall-clock time until which Priya is still speaking; ignore inbound
     # audio until then so she doesn't transcribe her own echo.
@@ -926,6 +927,17 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                                     f"[{'cache' if event.used_cache else 'tts'} "
                                     f"s{event.sentence_idx}] {event.text}",
                                 )
+                        except (WebSocketDisconnect, RuntimeError) as exc:
+                            # Lead hung up mid-reply — the Exotel WS is gone.
+                            # Stop sending: every remaining chunk would throw
+                            # and flood the logs (call 287e6c4d dumped 15
+                            # tracebacks). Mark the client gone and bail out.
+                            logger.info(
+                                "call_id=%s client disconnected mid-send (%s) "
+                                "— ending call", call_id, type(exc).__name__,
+                            )
+                            client_gone = True
+                            break
                         except Exception:
                             logger.exception("audio chunk send failed")
                     elif isinstance(event, TurnCompleteEvent):
@@ -987,6 +999,9 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                         )
             except Exception:
                 logger.exception("call_id=%s streaming orchestrator failure", call_id)
+
+            if client_gone:
+                break  # lead hung up — exit the frame loop, don't keep serving
 
             # Priya just spoke — reset capture. speaking_until (set per audio
             # chunk above) already keeps us deaf until her reply finishes.
