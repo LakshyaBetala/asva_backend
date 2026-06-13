@@ -83,6 +83,16 @@ class SarvamTTSError(RuntimeError):
     """Raised for non-2xx responses or malformed JSON."""
 
 
+def default_dict_id() -> str:
+    """Sarvam server-side pronunciation dictionary (phoneme-level word
+    fixes, scoped per language). Created once via
+    scripts/upload_pronunciation_dict.py; the returned p_... id goes in
+    SARVAM_TTS_DICT_ID. Empty = no dictionary."""
+    import os
+
+    return os.environ.get("SARVAM_TTS_DICT_ID", "").strip()
+
+
 async def synthesize(
     *,
     text: str,
@@ -94,6 +104,7 @@ async def synthesize(
     pitch: float = 0.0,
     pace: float = 1.0,
     loudness: float = 1.0,
+    dict_id: str | None = None,
     client: httpx.AsyncClient | None = None,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> TTSResult:
@@ -111,6 +122,9 @@ async def synthesize(
         "enable_preprocessing": True,
         "model": model,
     }
+    effective_dict = dict_id if dict_id is not None else default_dict_id()
+    if effective_dict:
+        body["dict_id"] = effective_dict
     # Bulbul v3 rejects pitch/loudness; bulbul v2 accepts them. Only send
     # when the caller customized them AND we're on a model that accepts.
     if model.startswith("bulbul:v2"):

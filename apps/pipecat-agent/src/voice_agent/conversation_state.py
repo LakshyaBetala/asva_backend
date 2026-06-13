@@ -336,15 +336,21 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
     # keeps drifting back to Hindi tokens because the corpus skews that way.
     if language == "ta-IN" and native_ta:
         parts.append(
-            "<LANG_PIN>RESPOND IN TAMIL SCRIPT (தமிழ்) — casual spoken "
+            "<LANG_PIN>RESPOND IN TAMIL SCRIPT (தமிழ்) — casual SPOKEN "
             "Chennai Tamil, the way a broker's assistant actually talks on "
-            "the phone. Spoken forms ALWAYS: வாங்க, பாக்கலாம், சொல்லுங்க, "
-            "இருக்கா, வேணும், பண்ணலாம், கெடைக்கும் — NEVER written/formal "
-            "Tamil (வேண்டும், இருக்கிறது, செய்யலாம் style is banned). "
-            "English business words (BHK, budget, WhatsApp, site visit, "
-            "Saturday, Sunday) stay in English letters inside the Tamil "
-            "sentence. ZERO HINDI TOKENS. Always a comma after the opening "
-            "ack.</LANG_PIN>"
+            "the phone. NEVER written/literary Tamil — a lead hung up "
+            "calling it 'மோசமான தமிழ்'.\n"
+            "RIGHT (spoken): 'சரி sir, Anna Nagar-ல two BHK பாக்கலாம். "
+            "உங்க budget எவ்ளோ sir?' / 'நீங்க rent-கு பாக்கறீங்களா, "
+            "வாங்கறதுக்கா?'\n"
+            "WRONG (literary, banned): 'நீங்கள் வாங்க விரும்புகிறீர்களா?' / "
+            "'எவ்வளவு செலவு செய்ய விரும்புகிறீர்கள்?'\n"
+            "Rules: verb endings -ங்க/-றீங்க (பாக்கறீங்க, சொல்லுங்க), never "
+            "-கிறீர்கள்; உங்க not உங்கள்; எவ்ளோ not எவ்வளவு; இல்ல not "
+            "இல்லை; வேணும் not வேண்டும். English business words (BHK, "
+            "budget, WhatsApp, site visit, Saturday) stay in English "
+            "letters. ZERO HINDI TOKENS (subah, bilkul, theek are Hindi — "
+            "banned). Always a comma after the opening ack.</LANG_PIN>"
         )
     elif language == "ta-IN":
         parts.append(
@@ -401,12 +407,16 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
             parts.append(
                 "<LANG_PIN>RESPOND IN DEVANAGARI (हिंदी) — casual broker-"
                 "phone Hindi, the way a Mumbai broker's assistant actually "
-                "talks: आप, जी, छोटे sentences, रोज़मर्रा के words (घर, दिखा "
-                "दूँगी, मिल जाएगा, बता दीजिए, देख लीजिए). NEVER shuddh/"
-                "textbook Hindi (निवास, आवास, कृपया are banned). English "
-                "business words (BHK, budget, WhatsApp, site visit, "
-                "Saturday, Sunday) stay in English letters inside the "
-                "sentence.</LANG_PIN>"
+                "talks.\n"
+                "RIGHT (spoken): 'अच्छा जी, Anna Nagar में 2 BHK देखते हैं. "
+                "Budget क्या रखा है आपने?' / 'घर अपने रहने के लिए चाहिए या "
+                "rent पे देना है?'\n"
+                "WRONG (shuddh, banned): 'आप कितना व्यय करना चाहते हैं?' / "
+                "'कृपया अपना निवास स्थान बताइए.'\n"
+                "Everyday words only (घर, दिखा दूँगी, मिल जाएगा, बता दीजिए); "
+                "निवास/आवास/कृपया banned. English business words (BHK, "
+                "budget, WhatsApp, site visit, Saturday) stay in English "
+                "letters inside the sentence.</LANG_PIN>"
             )
         else:
             parts.append(

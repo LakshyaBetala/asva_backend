@@ -30,11 +30,15 @@ GROQ_BASE = os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rs
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
-# max_tokens kept tight: a real cold-call agent never monologues. ~120 tokens
-# is 1-2 punchy Hinglish/Tanglish sentences — enough to answer, short enough to
-# stay human. (Slot-extraction calls override this via generation_config.)
+# max_tokens sized for NATIVE-SCRIPT replies: Tamil/Devanagari cost ~2-4
+# tokens per character on llama tokenizers, so the old 120 (fine for Roman
+# Hinglish) ran out MID-WORD once replies switched to native script — call
+# 7c8a0f11 spoke "...எத்தனை பணம் செலவு ச" and stopped. 320 fits 2 short
+# native sentences; brevity is enforced by the prompt + the orchestrator's
+# 2-sentence cap, not by truncation (truncation = garbled speech, never
+# brevity). Slot-extraction calls override via generation_config.
 DEFAULT_GENERATION_CONFIG: dict[str, Any] = {
-    "max_tokens": 120,
+    "max_tokens": 320,
     "temperature": 0.7,
     "top_p": 0.9,
 }

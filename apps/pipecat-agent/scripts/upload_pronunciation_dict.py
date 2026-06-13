@@ -1,0 +1,50 @@
+"""Upload a Sarvam pronunciation dictionary and print its dict_id.
+
+Server-side phoneme-level word fixes — stronger than the text-substitution
+pronunciation pack. Max 100 words per dictionary; entries are scoped to
+target_language_code at synthesis time.
+
+Edit DICT below with words testers flag as mispronounced (value = how it
+SHOULD sound, written phonetically), run:
+
+    python scripts/upload_pronunciation_dict.py
+
+then put the printed id in .env:  SARVAM_TTS_DICT_ID=p_xxxxxxxx
+"""
+import json
+import os
+import sys
+
+import httpx
+from dotenv import dotenv_values
+
+env = {**dotenv_values(".env"), **os.environ}
+KEY = env.get("SARVAM_API_KEY", "")
+if not KEY:
+    sys.exit("no SARVAM_API_KEY")
+
+# word → how to say it. Add entries per tester feedback, by ear.
+DICT = {
+    "pronunciations": {
+        "en-IN": {
+            "Almmatix": "All-matix",
+            "BHK": "B H K",
+        },
+        "hi-IN": {
+            "Almmatix": "All-matix",
+            "BHK": "B H K",
+        },
+        "ta-IN": {
+            "Almmatix": "All-matix",
+            "BHK": "B H K",
+        },
+    }
+}
+
+resp = httpx.post(
+    "https://api.sarvam.ai/text-to-speech/pronunciation-dictionary",
+    headers={"api-subscription-key": KEY},
+    files={"file": ("dict.json", json.dumps(DICT), "application/json")},
+    timeout=30.0,
+)
+print(resp.status_code, resp.text)

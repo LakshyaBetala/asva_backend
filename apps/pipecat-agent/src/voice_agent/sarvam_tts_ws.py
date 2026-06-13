@@ -40,6 +40,7 @@ from .sarvam_tts import (
     DEFAULT_MODEL,
     DEFAULT_SPEAKER,
     SarvamTTSError,
+    default_dict_id,
     synthesize as rest_synthesize,
 )
 
@@ -138,13 +139,17 @@ class SarvamStreamingTTS:
         # constant for the call; redundant configures add a round-trip.
         if self._configured_lang == lang:
             return
-        await ws.configure(
+        cfg: dict = dict(
             target_language_code=lang,
             speaker=self.speaker,
             speech_sample_rate=self.sample_rate,
             output_audio_codec="wav",
             min_buffer_size=self.min_buffer_size,
         )
+        dict_id = default_dict_id()
+        if dict_id:
+            cfg["dict_id"] = dict_id
+        await ws.configure(**cfg)
         self._configured_lang = lang
 
     # -- synthesis --------------------------------------------------------
@@ -179,8 +184,25 @@ class SarvamStreamingTTS:
             return
         async with self._lock:
             try:
+                # Hold the first two chunks (~270ms audio) before releasing:
+                # the phone line plays at exactly 1x; if generation hiccups
+                # early, the line runs dry mid-word — heard as random gaps
+                # inside a sentence ("sometimes it takes gaps"). A small
+                # jitter buffer absorbs that for ~140ms extra latency.
+                held: list[bytes] = []
                 async for chunk in self._stream_once(text, lang):
+                    if held is not None:
+                        held.append(chunk)
+                        if len(held) < 2:
+                            continue
+                        for h in held:
+                            yield h
+                        held = None  # type: ignore[assignment]
+                        continue
                     yield chunk
+                if held:
+                    for h in held:
+                        yield h
                 return
             except Exception as exc:
                 logger.warning(
