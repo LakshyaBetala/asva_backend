@@ -183,6 +183,11 @@ _TRIGGER_PHRASES: dict[Lang, tuple[str, ...]] = {
         "talk in english",
         "english please",
         "in english please",
+        # Native-script: pinned STT returns Devanagari/Tamil, so the lead's
+        # request "इंग्लिश में बात करो" came back in script the romanized
+        # forms above never matched (call 2809a134).
+        "इंग्लिश में बोल", "इंग्लिश में बात", "अंग्रेज़ी में बोल",
+        "ஆங்கிலத்தில் பேசு", "இங்கிலீஷ்ல பேசு",
     ),
     Lang.HI: (
         "hindi mein bolo",
@@ -194,6 +199,8 @@ _TRIGGER_PHRASES: dict[Lang, tuple[str, ...]] = {
         "hindi-la pesunga",
         "hindi please",
         "in hindi please",
+        "हिंदी में बोल", "हिंदी में बात", "हिन्दी में बोल", "हिन्दी में बात",
+        "ஹிந்தில பேசு", "இந்தியில் பேசு",
     ),
     Lang.TA: (
         "tamil-la pesunga",
@@ -212,6 +219,10 @@ _TRIGGER_PHRASES: dict[Lang, tuple[str, ...]] = {
         "tamizh pesalama",
         "tamil please",
         "in tamil please",
+        # Native-script (Devanagari "तमिल में बोल" was the exact miss in
+        # call 2809a134, and Tamil-script for a lead already part-switched).
+        "तमिल में बोल", "तमिल में बात", "तमिऴ में बोल",
+        "தமிழ்ல பேசு", "தமிழில் பேசு", "தமிழ்ல பேசுங்க", "தமிழ் பேசுங்க",
     ),
 }
 

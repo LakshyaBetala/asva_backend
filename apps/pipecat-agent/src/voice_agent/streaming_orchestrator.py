@@ -200,6 +200,10 @@ class StreamingDependencies:
     # pronunciation (e.g. "Almmatix" → "All-matix", "Betala" → "Beh-ta-la")
     # instead of relying on the TTS engine's phoneme guesser.
     pronunciation_pack: Mapping[str, str] = field(default_factory=dict)
+    # Tenant's company name (e.g. "XYZ Broker"). Priya speaks AS this broker,
+    # so warm-exit / referral lines must name THIS company — never our product
+    # brand "Almmatix" (which leaked into those hardcoded lines, call 2809a134).
+    company_name: str = ""
 
 
 # -- Sentence splitting ----------------------------------------------------
@@ -761,6 +765,7 @@ async def run_turn_streaming(
     user_msg = _format_user_message(
         stt_result.transcript, prior_slots, ctx.conversation_state,
         lang=transition.current_language.value, intent=intent,
+        company=getattr(deps, "company_name", "") or "",
     )
 
     # ---- 5. Start streaming LLM + slot extraction in parallel ----------
@@ -1469,9 +1474,15 @@ def should_end_call(intent: str, conv) -> bool:
     return False
 
 
-def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent: str = "normal"):
+def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent: str = "normal", company: str = ""):
     turn = len(conv.recent_priya_turns)
     is_silence = intent == "silence"
+    # Priya speaks AS the broker tenant — exit/referral lines must name THIS
+    # company, never our product brand "Almmatix" (call 2809a134). Fallback
+    # is a neutral phrase so an unconfigured tenant never voices the wrong name.
+    co = company.strip() if company else ""
+    co_hi = co or "hamari team"
+    co_ta = co or "enga team"
 
     # CLOSE NUDGES — two levels, neither dictates a canned "booked" line.
     # The old version force-injected a verbatim "Saturday 11 AM reserved"
@@ -1821,18 +1832,18 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         if conv.reject_count >= 2:
             if lang == "ta-IN":
                 line = (
-                    '"சரி sir, நல்ல property தேடும்போது Almmatix-கு call பண்ணுங்க. Thank you sir!"'
+                    f'"சரி sir, நல்ல property தேடும்போது {co_ta}-கு call பண்ணுங்க. Thank you sir!"'
                     if native else
-                    '"Sari sir, naala property thedumbothu Almmatix-ku call pannunga. Thank you sir!"'
+                    f'"Sari sir, naala property thedumbothu {co_ta}-ku call pannunga. Thank you sir!"'
                 )
                 parts.append(f'Still no. Warm exit: {line} Then STOP.')
             elif lang == "en-IN":
-                parts.append('Still no. Warm exit: "No problem sir, whenever you start looking for a property do remember Almmatix. Good day!" Then STOP.')
+                parts.append(f'Still no. Warm exit: "No problem sir, whenever you start looking for a property do remember {co or "us"}. Good day!" Then STOP.')
             else:
                 line = (
-                    '"कोई बात नहीं sir, घर देखना हो तो Almmatix याद रखिएगा. Good day!"'
+                    f'"कोई बात नहीं sir, घर देखना हो तो {co_hi} को याद रखिएगा. Good day!"'
                     if native else
-                    '"Koi baat nahi sir, ghar dekhna ho to Almmatix yaad rakhiyega. Good day!"'
+                    f'"Koi baat nahi sir, ghar dekhna ho to {co_hi} yaad rakhiyega. Good day!"'
                 )
                 parts.append(f'Still no. Warm exit: {line} Then STOP.')
         else:
@@ -1923,24 +1934,24 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         if conv.unproductive_turn_count >= 5:
             if lang == "ta-IN":
                 exit_phrase = (
-                    "சரி sir, உங்களுக்கு என்ன property வேணும்-னு confirm ஆனா, "
-                    "Almmatix-கு call பண்ணுங்க, நான் help பண்றேன். Thank you sir!"
+                    f"சரி sir, உங்களுக்கு என்ன property வேணும்-னு confirm ஆனா, "
+                    f"{co_ta}-கு call பண்ணுங்க, நான் help பண்றேன். Thank you sir!"
                     if native else
-                    "Sari sir, ungalukku enna property venum-nu confirm aana, Almmatix-ku "
-                    "call pannunga, naan help pannuren. Thank you sir!"
+                    f"Sari sir, ungalukku enna property venum-nu confirm aana, {co_ta}-ku "
+                    f"call pannunga, naan help pannuren. Thank you sir!"
                 )
             elif lang == "en-IN":
                 exit_phrase = (
-                    "No worries sir, whenever you have a specific property requirement, "
-                    "do remember Almmatix. Thank you for your time, sir!"
+                    f"No worries sir, whenever you have a specific property requirement, "
+                    f"do remember {co or 'us'}. Thank you for your time, sir!"
                 )
             else:
                 exit_phrase = (
-                    "कोई बात नहीं sir, जब भी कोई specific property ढूँढनी हो, "
-                    "Almmatix याद रखिएगा. आपका time दिया, thank you sir!"
+                    f"कोई बात नहीं sir, जब भी कोई specific property ढूँढनी हो, "
+                    f"{co_hi} को याद रखिएगा. आपका time दिया, thank you sir!"
                     if native else
-                    "Koi baat nahin sir, jab bhi koi specific property dhoondhni ho, "
-                    "Almmatix yaad rakhiyega. Aapka time diya, thank you sir!"
+                    f"Koi baat nahin sir, jab bhi koi specific property dhoondhni ho, "
+                    f"{co_hi} yaad rakhiyega. Aapka time diya, thank you sir!"
                 )
             parts.append(
                 f'[EXIT NOW. Lead is not a qualifying buyer ('

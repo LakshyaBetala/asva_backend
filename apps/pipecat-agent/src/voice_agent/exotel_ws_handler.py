@@ -869,6 +869,9 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                     if active.tenant is not None
                     else {}
                 ),
+                company_name=(
+                    active.tenant.company_name if active.tenant is not None else ""
+                ),
             )
 
             turn_end_call = False

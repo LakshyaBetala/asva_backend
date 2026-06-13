@@ -28,15 +28,21 @@ DICT = {
     "pronunciations": {
         "en-IN": {
             "Almmatix": "All-matix",
-            "BHK": "B H K",
+            "BHK": "bee aitch kay",
+            "2BHK": "two bee aitch kay",
+            "3BHK": "three bee aitch kay",
         },
         "hi-IN": {
-            "Almmatix": "All-matix",
-            "BHK": "B H K",
+            # Native letter-names so Bulbul says "bee-ech-ke" inside Hindi,
+            # not a mangled Latin token. (BHK pronunciation, feedback 2026-06-13.)
+            "Almmatix": "ऑलमैटिक्स",
+            "BHK": "बी एच के",
+            "WhatsApp": "वॉट्सऐप",
         },
         "ta-IN": {
-            "Almmatix": "All-matix",
-            "BHK": "B H K",
+            "Almmatix": "ஆல்மேட்டிக்ஸ்",
+            "BHK": "பி எச் கே",
+            "WhatsApp": "வாட்ஸ்அப்",
         },
     }
 }
