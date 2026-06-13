@@ -768,3 +768,31 @@ def test_requirement_bookable_needs_locality_or_bhk():
     assert _requirement_bookable("rent in Adyar")
     assert _requirement_bookable("2 BHK Anna Nagar rent")
     assert _requirement_bookable("rent, Velachery")
+
+
+# -- Call f63b23cb: end on "cut the call", repeat when lead can't hear --------
+
+def test_cut_the_call_ends_the_call():
+    from voice_agent.conversation_state import ConversationState
+    from voice_agent.streaming_orchestrator import classify_lead_intent, should_end_call
+    c = ConversationState()
+    for t in ("As you can please cut the call", "you didn't cut the call yet",
+              "cut the call", "you can disconnect now", "phone rakho"):
+        assert classify_lead_intent(t, c) == "close", t
+    assert should_end_call("close", c) is True
+
+
+def test_cant_hear_routes_to_clarify_not_normal():
+    from voice_agent.conversation_state import ConversationState
+    from voice_agent.streaming_orchestrator import classify_lead_intent
+    c = ConversationState()
+    for t in ("I'm not able to hear you, can I repeat?", "can you repeat that",
+              "you're breaking up", "cannot hear you"):
+        assert classify_lead_intent(t, c) == "clarify", t
+
+
+def test_real_answer_still_normal():
+    from voice_agent.conversation_state import ConversationState
+    from voice_agent.streaming_orchestrator import classify_lead_intent
+    c = ConversationState()
+    assert classify_lead_intent("I am looking for buying a flat in Kilpauk", c) == "normal"

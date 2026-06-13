@@ -1281,6 +1281,14 @@ _CLOSE_WORDS = [
     "व्हाट्सएप पर भेज", "देख लूँगा", "देख लेता", "देख लेंगे", "देख लूंगा",
     "ठीक है थैंक", "ठीक है बाय",
     "நன்றி", "சரி நன்றி", "போதும்", "அனுப்புங்க", "வாட்ஸ்அப்ல அனுப்பு",
+    # Explicit "end the call" — the lead asked twice to hang up and the call
+    # dragged into a 2nd credit (call f63b23cb: "please cut the call", "you
+    # didn't cut the call yet"). These map to close → should_end_call fires.
+    "cut the call", "cut call", "call cut", "cut kar do", "kaat do",
+    "hang up", "hangup", "disconnect", "end the call", "you can cut",
+    "you can hang", "you can disconnect", "phone rakho", "rakho phone",
+    "कॉल काट", "कॉल कट", "काट दो", "कट कर दो", "फ़ोन रखो", "फोन रखो", "रख दो फोन",
+    "call cut pannunga", "cut pannunga", "வெட்டிடுங்க", "கட் பண்ணுங்க",
 ]
 _REJECT_WORDS = [
     "not interested", "interested nahi", "nahi chahiye", "nahin chahiye",
@@ -1319,11 +1327,17 @@ _CLARIFY_WORDS = [
     "could not hear", "say again", "come again", "what was that", "what did you say",
     "pardon", "repeat please", "please repeat", "one more time", "again sir",
     "sorry sir", "sorry didn't", "sorry didnt",
+    # "I'm not able to hear you / can you repeat" — lead can't hear PRIYA;
+    # repeat her last line instead of moving on (call f63b23cb).
+    "not able to hear", "can't hear", "cant hear", "cannot hear",
+    "unable to hear", "you're breaking", "youre breaking", "breaking up",
+    "can you repeat", "can i repeat", "repeat that", "come back again",
     # Hindi
     "phir se", "phir bolo", "phir boliye", "dobara", "dubara", "kya bola",
     "kya kaha", "kya kaha sir", "samajh nahi", "samjha nahi", "samjhi nahi",
     "nahi suna", "nahi sunai", "suna nahi", "sunai nahi",
     "thoda dheere", "dheere boliye", "aaram se boliye",
+    "सुनाई नहीं", "आवाज़ नहीं आ रही", "आवाज नहीं आ रही", "फिर से बोल", "फिर बोल",
     # Tamil / Tanglish
     "enna sonninga", "enna sonneenga", "enna sonneenge", "enna sonnel",
     "puriyala", "puriyalai", "puriyale", "kekkala", "kekkalai",
