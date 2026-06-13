@@ -173,3 +173,36 @@ def test_sttresult_contract_matches_batch_adapter():
     which STT produced the utterance."""
     r = STTResult(transcript="x", language_code="en-IN", confidence=1.0, request_id=None)
     assert hasattr(r, "transcript") and hasattr(r, "language_code")
+
+
+@pytest.mark.asyncio
+async def test_repin_reconnects_with_new_language(monkeypatch):
+    sock = FakeSocket()
+    stt = _session_with(sock)
+    stt._language_hint = "en-IN"
+    started: list[str] = []
+
+    async def fake_start():
+        started.append(stt._language_hint)
+
+    monkeypatch.setattr(stt, "start", fake_start)
+    await stt.repin("ta-IN")
+    assert stt._language_hint == "ta-IN"
+    assert started == ["ta-IN"]      # reconnected pinned to the new language
+    assert stt._reader_task is None  # old reader torn down
+
+
+@pytest.mark.asyncio
+async def test_repin_noop_when_language_unchanged(monkeypatch):
+    sock = FakeSocket()
+    stt = _session_with(sock)
+    stt._language_hint = "hi-IN"
+    started: list[str] = []
+
+    async def fake_start():
+        started.append("called")
+
+    monkeypatch.setattr(stt, "start", fake_start)
+    await stt.repin("hi-IN")
+    assert started == []  # same language → no reconnect
+    await stt.close()

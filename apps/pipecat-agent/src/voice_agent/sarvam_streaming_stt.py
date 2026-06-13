@@ -105,6 +105,51 @@ class SarvamStreamingSTT:
             self._model, self._mode, self._sample_rate, self._language_hint,
         )
 
+    async def repin(self, language_hint: str) -> None:
+        """Reconnect the STT pinned to a NEW language — mid-call flip.
+
+        We pin language_code for accuracy (auto-detect garbles single-
+        language calls). When the language state machine confirms a real
+        switch (e.g. lead says "Tamil please" on an English call), the STT
+        must follow or it keeps mis-transcribing in the old language. This
+        tears down the current WS and reopens pinned to the new language.
+        Fired as a background task while Priya speaks the bridge line, so
+        the ~1s reconnect lands during her audio (lead isn't talking).
+        No-op if the language is unchanged or the session is dead.
+        """
+        if (
+            not language_hint
+            or language_hint == self._language_hint
+            or self.failed
+            or self._closed
+        ):
+            return
+        logger.info(
+            "sarvam STT re-pin %s -> %s (mid-call language flip)",
+            self._language_hint, language_hint,
+        )
+        if self._reader_task is not None:
+            self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._reader_task = None
+        if self._cm is not None:
+            try:
+                await self._cm.__aexit__(None, None, None)
+            except Exception:
+                pass
+            self._cm = None
+        self._socket = None
+        self._language_hint = language_hint
+        self.speech_active = False
+        try:
+            await self.start()
+        except Exception:
+            logger.exception("sarvam STT re-pin connect failed — marking failed")
+            self.failed = True
+
     async def close(self) -> None:
         self._closed = True
         if self._reader_task is not None:

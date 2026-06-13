@@ -932,6 +932,25 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                         active.slots = event.slots
                         turn_end_call = event.end_call
                         lm = event.latency_ms
+                        # Language flipped this turn (e.g. lead said "Tamil
+                        # please") → re-pin the STT to the new language so it
+                        # stops transcribing in the old one. Background task:
+                        # the ~1s reconnect overlaps Priya's bridge line, and
+                        # the lead isn't speaking yet. Only when we're pinning
+                        # and on the streaming path.
+                        if (
+                            event.language_transition.switched
+                            and stt_stream is not None
+                            and not stt_stream.failed
+                            and os.environ.get("SARVAM_STT_PIN_LANG", "1") != "0"
+                        ):
+                            _rp = asyncio.ensure_future(
+                                stt_stream.repin(
+                                    event.language_transition.current_language.value
+                                )
+                            )
+                            _bg_tasks.add(_rp)
+                            _rp.add_done_callback(_bg_tasks.discard)
                         _clog(
                             call_id, "LEAD",
                             f"[{event.lead_lang} conf={event.lead_confidence:.2f} "

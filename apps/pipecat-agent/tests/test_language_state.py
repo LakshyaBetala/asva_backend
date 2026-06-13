@@ -285,3 +285,23 @@ class TestIsBareAck:
         for text in ("ठीक है, Saturday chalega", "Budget is around",
                      "महिंद्रा सिटी।", "Anna Nagar mein"):
             assert not is_bare_ack(text), text
+
+
+class TestExplicitFlipPhrases:
+    def test_tamil_please_flips_english_call_to_tamil(self):
+        state = LanguageState.initial(Lang.EN)
+        t = state.update(utt("Tamil please", Lang.EN, conf=1.0))
+        assert t.switched is True
+        assert state.current == Lang.TA
+
+    def test_can_i_speak_in_hindi_flips(self):
+        state = LanguageState.initial(Lang.EN)
+        t = state.update(utt("can i speak in hindi", Lang.EN, conf=1.0))
+        assert t.switched is True
+        assert state.current == Lang.HI
+
+    def test_english_please_flips_back(self):
+        state = LanguageState.initial(Lang.TA)
+        t = state.update(utt("english please", Lang.TA, conf=1.0))
+        assert t.switched is True
+        assert state.current == Lang.EN
