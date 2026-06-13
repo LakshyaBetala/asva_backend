@@ -226,6 +226,17 @@ def split_sentences(text: str) -> list[str]:
 _PARENS_RE = re.compile(r"\s*[\(\[][^)\]]{0,200}[\)\]]")
 _TRANSLATION_PREFIX = re.compile(r"^\s*(translation|note|aside|stage)\s*:\s*", re.I)
 _WRAPPING_QUOTES = re.compile(r'^[\'"“”‘’]+|[\'"“”‘’]+$')
+# Markup the LLM sometimes parrots from the prompt (e.g. "<lang>hi-IN</lang>"
+# — the base prompt used to mention "the <lang> tag", so Gemini emitted it
+# verbatim and the TTS SPOKE it, call 6d9dc0f8). Metadata tags carry a VALUE
+# that must NOT be spoken (the "hi-IN" inside <lang>…</lang>), so those are
+# removed with their content; any other stray tag is unwrapped (inner text
+# kept) so a formatting slip like "<b>sir</b>" still says "sir".
+_META_TAG_RE = re.compile(
+    r"<(lang|current_language|lang_pin|format|phase|current_phase)\b[^>]*>.*?</\1>",
+    re.IGNORECASE | re.DOTALL,
+)
+_LONE_TAG_RE = re.compile(r"</?[a-zA-Z][^>]{0,40}>")
 
 
 def sanitize_for_tts(text: str) -> str:
@@ -245,7 +256,9 @@ def sanitize_for_tts(text: str) -> str:
     """
     if not text:
         return text
-    cleaned = _PARENS_RE.sub("", text)
+    cleaned = _META_TAG_RE.sub("", text)
+    cleaned = _LONE_TAG_RE.sub("", cleaned)
+    cleaned = _PARENS_RE.sub("", cleaned)
     cleaned = _TRANSLATION_PREFIX.sub("", cleaned)
     cleaned = _WRAPPING_QUOTES.sub("", cleaned.strip()).strip()
     # Hallucination filter — strip the recorded-message apology completely.

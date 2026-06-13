@@ -141,7 +141,7 @@ class _RealEstateBrain:
             return (
                 f"Hi {{name}}, this is {agent} from {company}. "
                 f"You were looking at properties in {tenant.city}, right? "
-                f"Quick two minutes."
+                f"Can I take two quick minutes?"
             )
         if lang == "hi-IN":
             # Native Devanagari hits Bulbul's Hindi phonemes; romanized text
@@ -150,26 +150,26 @@ class _RealEstateBrain:
             # owns those.
             if native_hindi_script_enabled():
                 return (
-                    f"नमस्ते {{name}} जी, मैं {agent}, {company} से. "
+                    f"नमस्ते {{name}} जी, मैं {agent}, {company} से बात कर रही हूँ. "
                     f"आप {tenant.city} में property देख रहे थे ना? "
-                    f"बस दो मिनट."
+                    f"दो मिनट बात कर सकते हैं?"
                 )
             return (
-                f"Namaste {{name}} ji, main {agent}, {company} se. "
+                f"Namaste {{name}} ji, main {agent}, {company} se baat kar rahi hoon. "
                 f"Aap {tenant.city} mein property dekh rahe the na? "
-                f"Bas do minute."
+                f"Do minute baat kar sakte hain?"
             )
         if lang == "ta-IN":
             if native_tamil_script_enabled():
                 return (
-                    f"வணக்கம் {{name}} sir, நான் {agent}, {company}-ல இருந்து. "
+                    f"வணக்கம் {{name}} sir, நான் {agent}, {company}-ல இருந்து பேசுறேன். "
                     f"நீங்க {tenant.city}-ல property பாத்தீங்க-ல? "
-                    f"ரெண்டு நிமிஷம் போதும்."
+                    f"ரெண்டு நிமிஷம் பேசலாமா sir?"
                 )
             return (
-                f"Vanakkam {{name}} sir, naan {agent}, {company} la irundhu. "
+                f"Vanakkam {{name}} sir, naan {agent}, {company} la irundhu pesuren. "
                 f"Neenga {tenant.city} la property paatheenga-la? "
-                f"Rendu minute podhum."
+                f"Rendu nimisham pesalaamaa sir?"
             )
         if lang == "mr-IN":
             return (

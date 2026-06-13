@@ -630,9 +630,27 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
                 # inbound audio is zero-fed anyway. If connect fails, the
                 # session marks itself failed and we fall back to batch.
                 if STREAMING_STT_ENABLED and os.environ.get("SARVAM_API_KEY"):
+                    # PIN the STT to the call's known language instead of
+                    # auto-detect. With lang=unknown, saaras re-guessed the
+                    # language every utterance and rendered Hindi/Tamil
+                    # speech in random Indic scripts (Gujarati "હા બોલો",
+                    # Telugu "థర్టీ ఫైవ్", Punjabi "ਕਿਸ ਗੱਲ" — call
+                    # 6d9dc0f8), which the language state machine then
+                    # treated as garble. The call's language is known at
+                    # dial time; pinning it is Sarvam's documented path to
+                    # max accuracy on single-language calls (code-mixed
+                    # English terms are still handled). Revert to auto with
+                    # SARVAM_STT_PIN_LANG=0.
+                    pinned = "unknown"
+                    if os.environ.get("SARVAM_STT_PIN_LANG", "1") != "0":
+                        try:
+                            pinned = active.ctx.language_state.current.value
+                        except Exception:
+                            pinned = "unknown"
                     stt_stream = SarvamStreamingSTT(
                         api_key=os.environ["SARVAM_API_KEY"],
                         sample_rate=EXOTEL_STREAM_SAMPLE_RATE,
+                        language_hint=pinned,
                     )
 
                     async def _start_stt(s: SarvamStreamingSTT = stt_stream) -> None:

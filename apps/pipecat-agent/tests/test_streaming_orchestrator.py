@@ -687,3 +687,21 @@ def test_long_number_echo_is_dropped():
         "thirty five se forty five hazaar tak.",
         "budget thirty five to forty five thousand",
     )
+
+
+# -- Markup tag stripping (call 6d9dc0f8: <lang>hi-IN</lang> was spoken) ------
+
+def test_sanitize_strips_lang_markup_tags():
+    from voice_agent.streaming_orchestrator import sanitize_for_tts
+
+    # The real bug: <lang>hi-IN</lang> prefix was SPOKEN (call 6d9dc0f8).
+    # Metadata tag removed WITH its value.
+    assert sanitize_for_tts("<lang>hi-IN</lang>Samjhi sir, kahan dekh rahe hain?") == (
+        "Samjhi sir, kahan dekh rahe hain?"
+    )
+    # Stray formatting tag unwrapped (inner text kept).
+    assert sanitize_for_tts("Budget <b>thirty</b> hazaar mein.") == (
+        "Budget thirty hazaar mein."
+    )
+    # Real angle-free text and Devanagari untouched.
+    assert sanitize_for_tts("नमस्ते sir, 2 BHK?") == "नमस्ते sir, 2 BHK?"
