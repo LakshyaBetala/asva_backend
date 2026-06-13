@@ -191,3 +191,27 @@ class TestNativeTamilScriptMode:
         s = ConversationState()
         prompt = system_prompt_addendum(s, language="hi-IN")
         assert "COLLOQUIAL HINGLISH" in prompt
+
+
+class TestNativeHindiScriptMode:
+    def test_native_devanagari_pin_on_sarvam_stack(self, monkeypatch):
+        monkeypatch.setenv("TTS_PROVIDER", "sarvam")
+        monkeypatch.delenv("TTS_NATIVE_HI", raising=False)
+        s = ConversationState()
+        prompt = system_prompt_addendum(s, language="hi-IN")
+        assert "DEVANAGARI" in prompt
+        assert "ROMAN SCRIPT ONLY" not in prompt
+
+    def test_hinglish_on_other_stacks(self, monkeypatch):
+        monkeypatch.delenv("TTS_PROVIDER", raising=False)
+        s = ConversationState()
+        prompt = system_prompt_addendum(s, language="hi-IN")
+        assert "COLLOQUIAL HINGLISH" in prompt
+        assert "ROMAN SCRIPT ONLY" in prompt
+
+    def test_native_hi_kill_switch(self, monkeypatch):
+        monkeypatch.setenv("TTS_PROVIDER", "sarvam")
+        monkeypatch.setenv("TTS_NATIVE_HI", "0")
+        s = ConversationState()
+        prompt = system_prompt_addendum(s, language="hi-IN")
+        assert "COLLOQUIAL HINGLISH" in prompt

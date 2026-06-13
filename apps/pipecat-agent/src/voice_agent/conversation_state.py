@@ -42,6 +42,20 @@ def native_tamil_script_enabled() -> bool:
     )
 
 
+def native_hindi_script_enabled() -> bool:
+    """True when Hindi replies should be written in Devanagari.
+
+    Same mechanism as Tamil: romanized Hinglish ("dekh rahe hain") gets
+    English letter-phonetics from the TTS — user rated Hindi 5/10 on
+    pronunciation (call f838d0d5, 2026-06-13). Devanagari hits Bulbul's
+    native Hindi phonemes; English business words stay in English
+    letters inside the sentence. TTS_NATIVE_HI=0 reverts."""
+    return (
+        os.environ.get("TTS_PROVIDER", "").strip().lower() == "sarvam"
+        and os.environ.get("TTS_NATIVE_HI", "1") != "0"
+    )
+
+
 class Phase(str, Enum):
     GREETING = "greeting"
     CONNECT = "connect"
@@ -304,7 +318,8 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
     parts: list[str] = []
 
     native_ta = language == "ta-IN" and native_tamil_script_enabled()
-    if native_ta:
+    native_hi = language == "hi-IN" and native_hindi_script_enabled()
+    if native_ta or native_hi:
         parts.append(
             "<format>1-2 sentences. "
             "Never re-introduce yourself or greet again. If the lead asks who "
@@ -382,20 +397,39 @@ def system_prompt_addendum(state: ConversationState, language: str = "hi-IN") ->
         )
         ext_hint = "Strong signal. Push for close."
     else:  # hi-IN
-        parts.append(
-            "<LANG_PIN>RESPOND IN COLLOQUIAL HINGLISH (Roman script) — the "
-            "way a broker's assistant talks on the phone: 'aap', 'ji', "
-            "short sentences, everyday words (ghar, flat, dekh lijiye, "
-            "bata dijiye, mil jayega). NEVER textbook shuddh Hindi "
-            "(nivas, awas, kripya are banned). English business words "
-            "(BHK, budget, WhatsApp, site visit) stay as-is.</LANG_PIN>"
-        )
+        if native_hi:
+            parts.append(
+                "<LANG_PIN>RESPOND IN DEVANAGARI (हिंदी) — casual broker-"
+                "phone Hindi, the way a Mumbai broker's assistant actually "
+                "talks: आप, जी, छोटे sentences, रोज़मर्रा के words (घर, दिखा "
+                "दूँगी, मिल जाएगा, बता दीजिए, देख लीजिए). NEVER shuddh/"
+                "textbook Hindi (निवास, आवास, कृपया are banned). English "
+                "business words (BHK, budget, WhatsApp, site visit, "
+                "Saturday, Sunday) stay in English letters inside the "
+                "sentence.</LANG_PIN>"
+            )
+        else:
+            parts.append(
+                "<LANG_PIN>RESPOND IN COLLOQUIAL HINGLISH (Roman script) — the "
+                "way a broker's assistant talks on the phone: 'aap', 'ji', "
+                "short sentences, everyday words (ghar, flat, dekh lijiye, "
+                "bata dijiye, mil jayega). NEVER textbook shuddh Hindi "
+                "(nivas, awas, kripya are banned). English business words "
+                "(BHK, budget, WhatsApp, site visit) stay as-is.</LANG_PIN>"
+            )
         ack_nudge_lang = "ji/haan/achha"
-        close_hint = (
-            "Close: 'Matching options isi number pe WhatsApp kar doongi. "
-            "Site visit Saturday ya Sunday?' "
-            "Confirm the slot, then thank + stop."
-        )
+        if native_hi:
+            close_hint = (
+                "Close: 'Matching options इसी number पे WhatsApp कर दूँगी. "
+                "Site visit Saturday या Sunday?' "
+                "Confirm the slot, then thank + stop."
+            )
+        else:
+            close_hint = (
+                "Close: 'Matching options isi number pe WhatsApp kar doongi. "
+                "Site visit Saturday ya Sunday?' "
+                "Confirm the slot, then thank + stop."
+            )
         connect_hint = "Ask buying or renting. ONE question only."
         discover_hint = "Find their must-have — locality? budget? possession timeline?"
         qualify_hint = (

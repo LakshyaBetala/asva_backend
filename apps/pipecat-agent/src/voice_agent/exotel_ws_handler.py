@@ -268,11 +268,15 @@ def _chunk_ms(pcm: bytes, sample_rate: int) -> int:
 
 
 # Half-duplex: we stream Priya's whole reply into Exotel's buffer instantly,
-# but it PLAYS over several seconds. While it plays (plus a tail for the
-# line to settle) we ignore all inbound audio — otherwise we transcribe her
-# own echo and she talks over herself ("rapping"). This is time-based, not
-# silence-based, because we can't reliably hear playback end on a phone line.
-SPEAK_TAIL_SEC = 0.7
+# but it PLAYS over several seconds. While it plays we ignore inbound audio —
+# otherwise we transcribe her own echo and she talks over herself ("rapping").
+# This is time-based, not silence-based, because we can't reliably hear
+# playback end on a phone line.
+#
+# RETIRED 2026-06-13: the extra post-playback deaf tail (SPEAK_TAIL_SEC=0.7)
+# ate the first words of fast answers — leads answer the moment the question
+# lands ("Anna Nagar" ×5 unheard, call f838d0d5). Stray echo right after
+# playback is handled by the orchestrator's echo-skip instead.
 
 # Only run a turn when the lead actually SPOKE this much (non-silent audio).
 # Pure silence/comfort-noise must never trigger a response, or Priya nags
@@ -682,13 +686,22 @@ async def exotel_stream(ws: WebSocket, call_id: str) -> None:
             # actual playback, treat it as the lead interrupting: flush her
             # queued audio and start listening immediately.
             now = time.monotonic()
-            if now < speaking_until + SPEAK_TAIL_SEC:
+            # Deaf only while audio is actually PLAYING. The old window
+            # extended SPEAK_TAIL_SEC past playback and fed silence there
+            # too — but fast leads answer inside that tail, so their first
+            # words (or whole short answers: "Anna Nagar" said five times,
+            # call f838d0d5) were never heard. Echo that leaks in right
+            # after playback is absorbed by the orchestrator's echo-skip.
+            if now < speaking_until:
                 interrupted = False
-                if BARGE_IN_ENABLED and now < speaking_until:
+                if BARGE_IN_ENABLED:
                     if _is_loud_voiced(chunk):
                         barge_voiced_ms += chunk_ms
                     else:
-                        barge_voiced_ms = 0  # must be *sustained* to count
+                        # Decay, don't hard-reset: real speech has micro-gaps
+                        # between words; a single quiet frame used to zero the
+                        # counter so barge-in effectively never fired.
+                        barge_voiced_ms = max(0, barge_voiced_ms - chunk_ms)
                     interrupted = barge_voiced_ms >= BARGE_IN_MS
                 if not interrupted:
                     buffer.clear()

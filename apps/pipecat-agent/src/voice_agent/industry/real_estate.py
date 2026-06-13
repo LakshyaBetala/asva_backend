@@ -22,6 +22,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from voice_agent.conversation_state import (
+    native_hindi_script_enabled,
+    native_tamil_script_enabled,
+)
 from voice_agent.tenant_config import TenantConfig
 
 
@@ -140,12 +144,28 @@ class _RealEstateBrain:
                 f"Quick two minutes."
             )
         if lang == "hi-IN":
+            # Native Devanagari hits Bulbul's Hindi phonemes; romanized text
+            # is read with English letter-phonetics (rated 5/10 by testers).
+            # The agent/company names stay Roman — the pronunciation pack
+            # owns those.
+            if native_hindi_script_enabled():
+                return (
+                    f"नमस्ते {{name}} जी, मैं {agent}, {company} से. "
+                    f"आप {tenant.city} में property देख रहे थे ना? "
+                    f"बस दो मिनट."
+                )
             return (
                 f"Namaste {{name}} ji, main {agent}, {company} se. "
                 f"Aap {tenant.city} mein property dekh rahe the na? "
                 f"Bas do minute."
             )
         if lang == "ta-IN":
+            if native_tamil_script_enabled():
+                return (
+                    f"வணக்கம் {{name}} sir, நான் {agent}, {company}-ல இருந்து. "
+                    f"நீங்க {tenant.city}-ல property பாத்தீங்க-ல? "
+                    f"ரெண்டு நிமிஷம் போதும்."
+                )
             return (
                 f"Vanakkam {{name}} sir, naan {agent}, {company} la irundhu. "
                 f"Neenga {tenant.city} la property paatheenga-la? "

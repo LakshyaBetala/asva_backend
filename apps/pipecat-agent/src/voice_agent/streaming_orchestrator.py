@@ -27,6 +27,7 @@ from typing import AsyncIterator, Mapping, Optional, Protocol
 from .conversation_state import (
     ConversationState,
     Phase,
+    native_hindi_script_enabled,
     native_tamil_script_enabled,
     system_prompt_addendum,
 )
@@ -601,7 +602,7 @@ async def run_turn_streaming(
         and ctx.conversation_state.repeat_request_count < 2
     ):
         ctx.conversation_state.repeat_request_count += 1
-        repeat_line = _REPEAT_LINES.get(cur_lang, _REPEAT_LINES["hi-IN"])
+        repeat_line = _repeat_line(cur_lang)
         # prepare_intro_for_tts = pack + Tamil pacing WITHOUT the name-echo
         # sanitiser (which could eat the leading "Sorry sir" ack).
         spoken = prepare_intro_for_tts(repeat_line, cur_lang, deps.pronunciation_pack)
@@ -858,9 +859,7 @@ async def run_turn_streaming(
     # neutral continue-prompt is safe in any call state. Skipped when the
     # turn is ending anyway — "Ji, boliye?" followed by a hangup is worse.
     if sentence_idx == 0 and not end_call:
-        cont = _CONTINUE_LINES.get(
-            transition.current_language.value, _CONTINUE_LINES["hi-IN"]
-        )
+        cont = _continue_line(transition.current_language.value)
         phrase_result = await load_or_synthesize_phrase(
             text=cont,
             lang=transition.current_language.value,
@@ -1072,6 +1071,38 @@ _CONTINUE_LINES = {
     "en-IN": "Yes, please go ahead?",
     "hi-IN": "Ji, boliye?",
 }
+# Native-script twins: Bulbul reads romanized Hindi/Tamil with English
+# letter-phonetics, so every line that is SPOKEN verbatim needs a native
+# form on the Sarvam stack (the LLM's prose is already pinned to native
+# script; these canned lines were the leftover).
+_REPEAT_LINES_NATIVE = {
+    "ta-IN": "Sorry sir, line சரியா இல்ல, கொஞ்சம் திரும்ப சொல்லுங்க?",
+    "hi-IN": "Sorry sir, आवाज़ clear नहीं आई — एक बार फिर बोलिए?",
+}
+_CONTINUE_LINES_NATIVE = {
+    "ta-IN": "சொல்லுங்க sir?",
+    "hi-IN": "जी, बोलिए?",
+}
+
+
+def _native_script_for(lang: str) -> bool:
+    if lang == "ta-IN":
+        return native_tamil_script_enabled()
+    if lang == "hi-IN":
+        return native_hindi_script_enabled()
+    return False
+
+
+def _repeat_line(lang: str) -> str:
+    if _native_script_for(lang) and lang in _REPEAT_LINES_NATIVE:
+        return _REPEAT_LINES_NATIVE[lang]
+    return _REPEAT_LINES.get(lang, _REPEAT_LINES["en-IN"])
+
+
+def _continue_line(lang: str) -> str:
+    if _native_script_for(lang) and lang in _CONTINUE_LINES_NATIVE:
+        return _CONTINUE_LINES_NATIVE[lang]
+    return _CONTINUE_LINES.get(lang, _CONTINUE_LINES["en-IN"])
 
 
 def _is_echo_ack(sentence: str, lead_text: str) -> bool:
@@ -1393,13 +1424,20 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
     )
     lead_frustrated = any(k in lead_lc or k in (lead_text or "") for k in _FRUSTRATION_KEYWORDS)
 
-    parts = [
-        (
+    if lang == "ta-IN" and native_tamil_script_enabled():
+        script_rule = (
             '[Tamil words in TAMIL SCRIPT; English terms (BHK, budget, '
             'WhatsApp) stay in English letters. No Devanagari.]'
-            if lang == "ta-IN" and native_tamil_script_enabled()
-            else '[ROMAN SCRIPT ONLY. No Devanagari. No Tamil script.]'
-        ),
+        )
+    elif lang == "hi-IN" and native_hindi_script_enabled():
+        script_rule = (
+            '[Hindi words in DEVANAGARI; English terms (BHK, budget, '
+            'WhatsApp) stay in English letters. No Tamil script.]'
+        )
+    else:
+        script_rule = '[ROMAN SCRIPT ONLY. No Devanagari. No Tamil script.]'
+    parts = [
+        script_rule,
         # Anti-parrot — the #1 complaint from live calls. "Acknowledge" means
         # 2-4 words, NEVER a restatement of what the lead just told you.
         '[NEVER restate or summarise the lead\'s words back to them '
@@ -1670,57 +1708,120 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         )
         return "\n".join(parts)
 
+    native = _native_script_for(lang)
     if intent == "close":
         if lang == "ta-IN":
-            parts.append('Lead wants to CLOSE. Say ONLY: "Sari sir, indha number ku WhatsApp la property details + site visit slot anuppuren, team confirm pannuvaanga. Thank you sir!" Then STOP.')
+            line = (
+                '"சரி sir, இந்த number-கு WhatsApp-ல property details + site visit slot அனுப்புறேன், team confirm பண்ணுவாங்க. Thank you sir!"'
+                if native else
+                '"Sari sir, indha number ku WhatsApp la property details + site visit slot anuppuren, team confirm pannuvaanga. Thank you sir!"'
+            )
+            parts.append(f'Lead wants to CLOSE. Say ONLY: {line} Then STOP.')
         elif lang == "en-IN":
             parts.append('Lead wants to CLOSE. Say ONLY: "Got it sir, our team will send the property details + site visit slot on WhatsApp to this number. Thank you, sir!" Then STOP.')
         else:
-            parts.append('Lead wants to CLOSE. Say ONLY: "Bilkul sir, isi number pe WhatsApp pe property details aur site visit slot bhej dete hain. Thank you!" Then STOP.')
+            line = (
+                '"बिल्कुल sir, इसी number पे WhatsApp पे property details और site visit slot भेज देती हूँ. Thank you!"'
+                if native else
+                '"Bilkul sir, isi number pe WhatsApp pe property details aur site visit slot bhej dete hain. Thank you!"'
+            )
+            parts.append(f'Lead wants to CLOSE. Say ONLY: {line} Then STOP.')
     elif intent == "reject":
         if conv.reject_count >= 2:
             if lang == "ta-IN":
-                parts.append('Still no. Warm exit: "Sari sir, naala property thedumbothu Almmatix-ku call pannunga. Thank you sir!" Then STOP.')
+                line = (
+                    '"சரி sir, நல்ல property தேடும்போது Almmatix-கு call பண்ணுங்க. Thank you sir!"'
+                    if native else
+                    '"Sari sir, naala property thedumbothu Almmatix-ku call pannunga. Thank you sir!"'
+                )
+                parts.append(f'Still no. Warm exit: {line} Then STOP.')
             elif lang == "en-IN":
                 parts.append('Still no. Warm exit: "No problem sir, whenever you start looking for a property do remember Almmatix. Good day!" Then STOP.')
             else:
-                parts.append('Still no. Warm exit: "Koi baat nahi sir, ghar dekhna ho to Almmatix yaad rakhiyega. Good day!" Then STOP.')
+                line = (
+                    '"कोई बात नहीं sir, घर देखना हो तो Almmatix याद रखिएगा. Good day!"'
+                    if native else
+                    '"Koi baat nahi sir, ghar dekhna ho to Almmatix yaad rakhiyega. Good day!"'
+                )
+                parts.append(f'Still no. Warm exit: {line} Then STOP.')
         else:
             if lang == "ta-IN":
-                parts.append('Lead not interested. Don\'t push — ask for a REFERRAL ONCE: "Sari sir. Ungal nanban yaaravadhu ghar or flat thedanna, indha number ku sollunga, naanga nalla site visit set pannuvom."')
+                line = (
+                    '"சரி sir. உங்க friend யாராவது வீடு தேடினா, இந்த number-கு சொல்லுங்க, நாங்க நல்லா site visit set பண்ணுவோம்."'
+                    if native else
+                    '"Sari sir. Ungal nanban yaaravadhu ghar or flat thedanna, indha number ku sollunga, naanga nalla site visit set pannuvom."'
+                )
+                parts.append(f"Lead not interested. Don't push — ask for a REFERRAL ONCE: {line}")
             elif lang == "en-IN":
                 parts.append('Lead not interested. Don\'t push — ask for a REFERRAL ONCE: "No problem sir. If anyone you know is looking for a property, do share our number — we will arrange site visits for them."')
             else:
-                parts.append('Lead not interested. Don\'t push — ask for a REFERRAL once: "Koi baat nahi sir. Aapke kisi jaan-pehchaan ko ghar dhoondhna ho to bata dijiye, hum site visit set kar denge?"')
+                line = (
+                    '"कोई बात नहीं sir. आपके किसी जान-पहचान को घर ढूँढना हो तो बता दीजिए, हम site visit set कर देंगे?"'
+                    if native else
+                    '"Koi baat nahi sir. Aapke kisi jaan-pehchaan ko ghar dhoondhna ho to bata dijiye, hum site visit set kar denge?"'
+                )
+                parts.append(f"Lead not interested. Don't push — ask for a REFERRAL once: {line}")
     elif intent == "abuse":
         if lang == "ta-IN":
-            parts.append('Lead abusive. Say ONLY: "Sari sir, good day." Nothing else.')
+            parts.append(
+                'Lead abusive. Say ONLY: "சரி sir, good day." Nothing else.'
+                if native else
+                'Lead abusive. Say ONLY: "Sari sir, good day." Nothing else.'
+            )
         elif lang == "en-IN":
             parts.append('Lead abusive. Say ONLY: "Thank you sir, good day." Nothing else.')
         else:
-            parts.append('Lead abusive. Say ONLY: "Theek hai sir, good day." Nothing else.')
+            parts.append(
+                'Lead abusive. Say ONLY: "ठीक है sir, good day." Nothing else.'
+                if native else
+                'Lead abusive. Say ONLY: "Theek hai sir, good day." Nothing else.'
+            )
     elif intent == "wrong":
         if lang == "ta-IN":
-            parts.append('Wrong person / off-topic. Say ONLY: "Sorry sir, ungal time waste pannitten. Good day sir!" Then STOP.')
+            parts.append(
+                'Wrong person / off-topic. Say ONLY: "Sorry sir, உங்க time எடுத்துட்டேன். Good day sir!" Then STOP.'
+                if native else
+                'Wrong person / off-topic. Say ONLY: "Sorry sir, ungal time waste pannitten. Good day sir!" Then STOP.'
+            )
         elif lang == "en-IN":
             parts.append('Wrong person / off-topic. Say ONLY: "Sorry sir, took your time. Good day!" Then STOP.')
         else:
-            parts.append('Wrong person / off-topic. Say ONLY: "Sorry sir, aapka time liya. Good day!" Then STOP.')
+            parts.append(
+                'Wrong person / off-topic. Say ONLY: "Sorry sir, आपका time लिया. Good day!" Then STOP.'
+                if native else
+                'Wrong person / off-topic. Say ONLY: "Sorry sir, aapka time liya. Good day!" Then STOP.'
+            )
     elif intent == "offtopic":
         if conv.off_topic_count >= 2:
             if lang == "ta-IN":
-                parts.append('Still off-topic. End: "Sari sir, good day sir!" STOP.')
+                parts.append(
+                    'Still off-topic. End: "சரி sir, good day sir!" STOP.'
+                    if native else
+                    'Still off-topic. End: "Sari sir, good day sir!" STOP.'
+                )
             elif lang == "en-IN":
                 parts.append('Still off-topic. End: "No problem sir, good day!" STOP.')
             else:
-                parts.append('Still off-topic. End: "Koi baat nahi sir, good day!" STOP.')
+                parts.append(
+                    'Still off-topic. End: "कोई बात नहीं sir, good day!" STOP.'
+                    if native else
+                    'Still off-topic. End: "Koi baat nahi sir, good day!" STOP.'
+                )
         else:
             if lang == "ta-IN":
-                parts.append('Lead off-topic. Probe ONCE: "Sir, ungalukku ipo ghar or flat thedanum-aa, illa investment-kana property paakareenga sir?"')
+                parts.append(
+                    'Lead off-topic. Probe ONCE: "Sir, உங்களுக்கு இப்போ வீடு தேடணும்-ஆ, இல்ல investment-கான property பாக்கறீங்களா sir?"'
+                    if native else
+                    'Lead off-topic. Probe ONCE: "Sir, ungalukku ipo ghar or flat thedanum-aa, illa investment-kana property paakareenga sir?"'
+                )
             elif lang == "en-IN":
                 parts.append('Lead off-topic. Probe ONCE: "Sir, are you actively looking for a home, or scouting for an investment property right now?"')
             else:
-                parts.append('Lead off-topic. Probe ONCE: "Sir, abhi aap ghar dhoondh rahe hain ya investment ke liye property dekh rahe hain?"')
+                parts.append(
+                    'Lead off-topic. Probe ONCE: "Sir, अभी आप घर ढूँढ रहे हैं या investment के लिए property देख रहे हैं?"'
+                    if native else
+                    'Lead off-topic. Probe ONCE: "Sir, abhi aap ghar dhoondh rahe hain ya investment ke liye property dekh rahe hain?"'
+                )
     else:
         # ---- Tire-kicker exit (5 unproductive turns in a row) ----
         # Threshold was 3 — too aggressive for Tamil/Hindi cold calls where
@@ -1731,8 +1832,11 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         if conv.unproductive_turn_count >= 5:
             if lang == "ta-IN":
                 exit_phrase = (
+                    "சரி sir, உங்களுக்கு என்ன property வேணும்-னு confirm ஆனா, "
+                    "Almmatix-கு call பண்ணுங்க, நான் help பண்றேன். Thank you sir!"
+                    if native else
                     "Sari sir, ungalukku enna property venum-nu confirm aana, Almmatix-ku "
-                    "call pannunga... naan help pannuren. Thank you sir!"
+                    "call pannunga, naan help pannuren. Thank you sir!"
                 )
             elif lang == "en-IN":
                 exit_phrase = (
@@ -1741,6 +1845,9 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
                 )
             else:
                 exit_phrase = (
+                    "कोई बात नहीं sir, जब भी कोई specific property ढूँढनी हो, "
+                    "Almmatix याद रखिएगा. आपका time दिया, thank you sir!"
+                    if native else
                     "Koi baat nahin sir, jab bhi koi specific property dhoondhni ho, "
                     "Almmatix yaad rakhiyega. Aapka time diya, thank you sir!"
                 )
@@ -1759,6 +1866,9 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
         if conv.close_armed and conv.consecutive_close_attempts < 1 and not lead_question:
             if lang == "ta-IN":
                 close_phrase = (
+                    "சரி sir, matching properties இந்த number-கு WhatsApp-ல "
+                    "அனுப்புறேன். Site visit-கு Saturday-ஆ Sunday-ஆ sir?"
+                    if _native_script_for(lang) else
                     "Sari sir, matching properties indha number ku WhatsApp la "
                     "anuppuren. Site visit ku Saturday-aa, Sunday-aa sir?"
                 )
@@ -1769,6 +1879,9 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
                 )
             else:
                 close_phrase = (
+                    "बिल्कुल sir, matching options इसी number पे WhatsApp कर "
+                    "दूँगी. Site visit के लिए Saturday ठीक रहेगा या Sunday?"
+                    if _native_script_for(lang) else
                     "Bilkul sir, matching options isi number pe WhatsApp kar "
                     "doongi. Site visit ke liye Saturday theek rahega ya Sunday?"
                 )
@@ -1789,6 +1902,10 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
             if lang == "ta-IN":
                 heat_directive = (
                     "[TEMPERATURE: HOT. Stop discovery. CLOSE this turn — "
+                    "'சரி sir, matching properties WhatsApp-ல அனுப்புறேன். "
+                    "Site visit-கு Saturday-ஆ Sunday-ஆ sir?']"
+                    if _native_script_for(lang) else
+                    "[TEMPERATURE: HOT. Stop discovery. CLOSE this turn — "
                     "'Sari sir, matching properties indha number ku WhatsApp la "
                     "anuppuren. Site visit ku Saturday-aa, Sunday-aa sir?']"
                 )
@@ -1800,6 +1917,10 @@ def _format_user_message(lead_text, slots, conv, *, lang: str = "hi-IN", intent:
                 )
             else:
                 heat_directive = (
+                    "[TEMPERATURE: HOT. Stop discovery. CLOSE this turn — "
+                    "'बिल्कुल sir, matching options WhatsApp पे भेज दूँगी — "
+                    "site visit Saturday या Sunday?']"
+                    if _native_script_for(lang) else
                     "[TEMPERATURE: HOT. Stop discovery. CLOSE this turn — "
                     "'Bilkul sir, matching options isi number pe WhatsApp kar "
                     "doongi. Site visit Saturday ya Sunday?']"

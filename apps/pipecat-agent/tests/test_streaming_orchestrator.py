@@ -618,3 +618,26 @@ def test_echo_ack_keeps_real_acks_and_content():
         "2 BHK Annanagar 15 to 20k",
     )
     assert not _is_echo_ack("", "anything")
+
+
+# -- Native-script canned lines (pronunciation, 2026-06-13) -------------------
+
+def test_canned_lines_native_on_sarvam_stack(monkeypatch):
+    from voice_agent.streaming_orchestrator import _continue_line, _repeat_line
+
+    monkeypatch.setenv("TTS_PROVIDER", "sarvam")
+    monkeypatch.delenv("TTS_NATIVE_HI", raising=False)
+    monkeypatch.delenv("TTS_NATIVE_TA", raising=False)
+    assert "आवाज़" in _repeat_line("hi-IN")
+    assert "சொல்லுங்க" in _repeat_line("ta-IN")
+    assert "बोलिए" in _continue_line("hi-IN")
+    # English untouched.
+    assert _repeat_line("en-IN").startswith("Sorry")
+
+
+def test_canned_lines_roman_on_other_stacks(monkeypatch):
+    from voice_agent.streaming_orchestrator import _repeat_line
+
+    monkeypatch.delenv("TTS_PROVIDER", raising=False)
+    assert _repeat_line("hi-IN").startswith("Sorry sir, awaaz")
+    assert _repeat_line("ta-IN").startswith("Sorry sir, line clear-aa")
