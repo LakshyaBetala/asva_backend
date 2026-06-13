@@ -230,6 +230,70 @@ def _parse_groq_retry_after(msg: str) -> float | None:
 # a quota 429, route straight to Groq until the cooldown passes.
 _GEMINI_QUOTA_COOLDOWN_SEC = 300.0
 _gemini_down_until = 0.0
+
+
+class _GeminiKeyPool:
+    """Round-robin pool of Gemini API keys with per-key cooldown.
+
+    Free-tier keys have separate daily quotas, so rotating one key per call
+    across N keys gives ~Nx the free capacity AND keeps us on Gemini instead
+    of falling through the slow Groq→Cerebras 429 cascade (which added 1-3s
+    per turn, call 287e6c4d). A key that hits its quota is parked on cooldown
+    and skipped until it recovers.
+    """
+
+    def __init__(self, keys: list[str]) -> None:
+        self.keys = [k for k in keys if k]
+        self._i = 0
+        self._down: dict[str, float] = {}
+
+    def next_key(self) -> str:
+        """Next key not on cooldown (round-robin); else the soonest-recovering."""
+        if not self.keys:
+            return ""
+        now = time.monotonic()
+        n = len(self.keys)
+        for _ in range(n):
+            k = self.keys[self._i % n]
+            self._i += 1
+            if self._down.get(k, 0.0) <= now:
+                return k
+        return min(self.keys, key=lambda k: self._down.get(k, 0.0))
+
+    def is_down(self, key: str) -> bool:
+        return self._down.get(key, 0.0) > time.monotonic()
+
+    def mark_exhausted(self, key: str, cooldown: float = _GEMINI_QUOTA_COOLDOWN_SEC) -> None:
+        if key:
+            self._down[key] = time.monotonic() + cooldown
+
+
+def gemini_keys_from_env(env: dict[str, str] | None = None) -> list[str]:
+    """Parse GEMINI_API_KEYS (comma-separated) with GEMINI_API_KEY fallback."""
+    src = env if env is not None else os.environ
+    multi = src.get("GEMINI_API_KEYS", "")
+    keys = [k.strip() for k in multi.split(",") if k.strip()]
+    single = src.get("GEMINI_API_KEY", "").strip()
+    if single and single not in keys:
+        keys.append(single)
+    return keys
+
+
+# Process-wide pool, lazily initialised from env on first use.
+_gemini_pool: _GeminiKeyPool | None = None
+
+
+def _get_gemini_pool() -> _GeminiKeyPool:
+    global _gemini_pool
+    if _gemini_pool is None:
+        _gemini_pool = _GeminiKeyPool(gemini_keys_from_env())
+    return _gemini_pool
+
+
+def next_gemini_key() -> str:
+    """Pick the next Gemini key for a new call (round-robin, skips exhausted).
+    Empty string if no keys configured."""
+    return _get_gemini_pool().next_key()
 # Same breaker for Groq's DAILY token cap (TPD) — once it's gone it's gone
 # for ~hours, but call be21ced9 paid a Groq 429 round-trip on every single
 # turn before hopping to Cerebras. Minute-level (TPM) 429s do NOT trip
@@ -295,10 +359,12 @@ class _GroqAdapter:
         410ms"). When that wait is short, sleeping it out and retrying Groq
         beats switching providers — call 21c9952b paid 5.7-6.3s for Gemini
         fallbacks that a sub-second retry would have avoided."""
-        global _gemini_down_until
         if self.gemini_primary:
-            g_key = self.fallback_gemini_key or self.gemini_key
-            if g_key and time.monotonic() >= _gemini_down_until:
+            pool = _get_gemini_pool()
+            # The key assigned to this call (rotated per call by the deps
+            # builder); fall back to a fresh pool pick if unset.
+            g_key = self.fallback_gemini_key or self.gemini_key or pool.next_key()
+            if g_key and not pool.is_down(g_key):
                 got_gemini_chunk = False
                 try:
                     async for chunk in gemini_stream(
@@ -317,15 +383,14 @@ class _GroqAdapter:
                         raise
                     msg = str(exc).lower()
                     if "429" in msg or "quota" in msg or "rate limit" in msg:
-                        # Quota exhaustion doesn't recover turn-to-turn —
-                        # call 2b674c4c paid a failed Gemini round-trip on
-                        # EVERY turn. Stop trying for a while.
-                        _gemini_down_until = (
-                            time.monotonic() + _GEMINI_QUOTA_COOLDOWN_SEC
-                        )
+                        # This key's quota is gone — park it on cooldown so
+                        # the pool skips it; the next call rotates to another
+                        # key. (Per-key, not global: with 3 keys we keep
+                        # serving on Gemini instead of the slow Groq cascade.)
+                        pool.mark_exhausted(g_key)
                         logger.warning(
-                            "gemini quota exhausted — using groq for the next "
-                            "%.0fs (%s)", _GEMINI_QUOTA_COOLDOWN_SEC, exc,
+                            "gemini key exhausted — parked %.0fs, falling back "
+                            "to groq this turn (%s)", _GEMINI_QUOTA_COOLDOWN_SEC, exc,
                         )
                     else:
                         logger.warning(
@@ -657,7 +722,9 @@ def _load_env() -> dict[str, str]:
 
 def _build_deps(env: dict[str, str], http: httpx.AsyncClient) -> TurnDependencies:
     sarvam_key = env.get("SARVAM_API_KEY", "")
-    gemini_key = env.get("GEMINI_API_KEY", "")
+    # Rotate one Gemini key per call across GEMINI_API_KEYS (free-tier quota
+    # spread + keeps us on Gemini instead of the slow Groq→Cerebras cascade).
+    gemini_key = next_gemini_key() or env.get("GEMINI_API_KEY", "")
     gemini_model = env.get("GEMINI_MODEL", "gemini-2.5-flash")
     groq_key = env.get("GROQ_API_KEY", "")
     groq_model = env.get("GROQ_MODEL", "llama-3.3-70b-versatile")

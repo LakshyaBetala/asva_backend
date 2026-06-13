@@ -108,3 +108,41 @@ def test_adapters_expose_protocol_methods():
     import asyncio
 
     asyncio.run(_check())
+
+
+# -- Gemini key pool (rotate per call across free-tier keys) ------------------
+
+def test_gemini_pool_round_robin():
+    from voice_agent.local_audio import _GeminiKeyPool
+    p = _GeminiKeyPool(["k1", "k2", "k3"])
+    assert [p.next_key() for _ in range(6)] == ["k1", "k2", "k3", "k1", "k2", "k3"]
+
+
+def test_gemini_pool_skips_exhausted_key():
+    from voice_agent.local_audio import _GeminiKeyPool
+    p = _GeminiKeyPool(["k1", "k2", "k3"])
+    p.mark_exhausted("k2")
+    picks = [p.next_key() for _ in range(4)]
+    assert "k2" not in picks
+    assert p.is_down("k2")
+
+
+def test_gemini_pool_all_down_returns_soonest():
+    from voice_agent.local_audio import _GeminiKeyPool
+    p = _GeminiKeyPool(["k1", "k2"])
+    p.mark_exhausted("k1", cooldown=999)
+    p.mark_exhausted("k2", cooldown=1)
+    # both down → returns the soonest-recovering (k2), never crashes
+    assert p.next_key() == "k2"
+
+
+def test_gemini_keys_from_env_parses_and_dedupes():
+    from voice_agent.local_audio import gemini_keys_from_env
+    assert gemini_keys_from_env({"GEMINI_API_KEYS": "a, b ,c", "GEMINI_API_KEY": "a"}) == ["a", "b", "c"]
+    assert gemini_keys_from_env({"GEMINI_API_KEY": "solo"}) == ["solo"]
+    assert gemini_keys_from_env({}) == []
+
+
+def test_gemini_pool_empty_is_safe():
+    from voice_agent.local_audio import _GeminiKeyPool
+    assert _GeminiKeyPool([]).next_key() == ""

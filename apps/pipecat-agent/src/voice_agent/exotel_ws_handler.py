@@ -223,8 +223,13 @@ STREAMING_STT_ENABLED = os.environ.get(
 # MERGED into one utterance (the "answers half-questions" fix, done at the
 # source). The hold extends while Sarvam reports speech is still active,
 # capped at STREAM_MAX_HOLD_SEC so a stuck VAD flag can't stall the call.
+# 400ms (was 250): a natural mid-sentence pause is ~300-500ms, so 250 let
+# Priya answer before the lead finished (feedback 2026-06-13: "ai answers
+# before the lead completes"). 400 gives that beat back; the cost is ~150ms
+# extra before a genuinely-finished turn, which is the right trade — cutting
+# the lead off derails the call far worse than a slightly later reply.
 STREAM_MERGE_GRACE_SEC = int(
-    os.environ.get("EXOTEL_STREAM_MERGE_GRACE_MS", "250")
+    os.environ.get("EXOTEL_STREAM_MERGE_GRACE_MS", "400")
 ) / 1000.0
 STREAM_MAX_HOLD_SEC = 4.0
 # Extra one-shot hold when the merged transcript looks cut off mid-sentence
@@ -1245,8 +1250,12 @@ def _build_deps_from_env() -> TurnDependencies:
         _SmallestTTSAdapter,
     )
 
+    from .local_audio import next_gemini_key
+
     sarvam_key = os.environ.get("SARVAM_API_KEY", "")
-    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    # Rotate one Gemini key per call across GEMINI_API_KEYS (free-tier quota
+    # spread + avoids the slow 429 cascade that added 1-3s/turn, call 287e6c4d).
+    gemini_key = next_gemini_key() or os.environ.get("GEMINI_API_KEY", "")
     gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
     groq_key = os.environ.get("GROQ_API_KEY", "")
     groq_model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
