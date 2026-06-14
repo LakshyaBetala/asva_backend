@@ -38,7 +38,7 @@ from .language_state import (
     Transition,
     is_bare_ack,
 )
-from .industry.real_estate import LOCALITIES, LOCALITY_ALIASES
+from .industry.real_estate import LOCALITIES, LOCALITY_ALIASES, normalize_localities
 from .pain_library import pick_pain_hypothesis
 from .phrase_cache import PINNED_VOICE_ID, load_or_synthesize_phrase, phrase_r2_key
 from .sarvam_tts_ws import pcm16_to_wav
@@ -620,6 +620,22 @@ async def run_turn_streaming(
         timings["stt_ms"] = int((time.monotonic() - stt_t0) * 1000)
 
     raw_transcript = (stt_result.transcript or "").strip()
+
+    # Repair romanized locality drift from the 8kHz line BEFORE anything reads
+    # the transcript — slot extraction, the LLM message and history then all
+    # see the canonical name (lead said "Kilpauk", noisy STT drifts it; left
+    # alone Priya echoed a wrong neighbourhood). Conservative: known drifts +
+    # tight unambiguous typos only; unknown words pass through untouched.
+    if raw_transcript and raw_transcript != "(silence)":
+        fixed = normalize_localities(raw_transcript)
+        if fixed != raw_transcript:
+            raw_transcript = fixed
+            stt_result = _STTResult(
+                transcript=fixed,
+                language_code=stt_result.language_code,
+                confidence=stt_result.confidence,
+                request_id=getattr(stt_result, "request_id", ""),
+            )
 
     is_echo = False
     if raw_transcript and ctx.conversation_state.recent_priya_turns:

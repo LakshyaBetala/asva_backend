@@ -20,6 +20,7 @@ only — brokers don't work Tamil Nadu).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from voice_agent.conversation_state import (
@@ -27,7 +28,6 @@ from voice_agent.conversation_state import (
     native_tamil_script_enabled,
 )
 from voice_agent.tenant_config import TenantConfig
-
 
 _SUPPORTED_LANGS = ("en-IN", "hi-IN", "ta-IN", "mr-IN", "kn-IN", "te-IN")
 
@@ -46,6 +46,7 @@ LOCALITIES: dict[str, tuple[str, ...]] = {
         "Vadapalani", "Saidapet", "Chromepet", "Pallikaranai", "Thoraipakkam",
         "Adambakkam", "Guindy", "Kodambakkam", "Ashok Nagar", "Thiruvanmiyur",
         "Madipakkam", "Medavakkam", "Navalur", "Kelambakkam", "Royapettah",
+        "Vepery",
     ),
     "Mumbai": (
         "Bandra West", "Bandra East", "Khar", "Santacruz West", "Santacruz East",
@@ -80,6 +81,9 @@ LOCALITIES: dict[str, tuple[str, ...]] = {
 # transcript normalizer to repair STT confusions before slot extraction.
 LOCALITY_ALIASES: dict[str, str] = {
     "bandar": "Bandra West", "bandara": "Bandra West", "vandre": "Bandra West",
+    "bandar west": "Bandra West", "bandar east": "Bandra East",
+    "bandara west": "Bandra West", "bandara east": "Bandra East",
+    "vandre west": "Bandra West", "vandre east": "Bandra East",
     "pooway": "Powai", "pavai": "Powai", "powae": "Powai",
     "andheri west": "Andheri West", "andheri east": "Andheri East",
     "kankubadi": "Kanakapura Road",
@@ -108,25 +112,123 @@ LOCALITY_ALIASES: dict[str, str] = {
     "tambram": "Tambaram", "thambaram": "Tambaram",
     "chrompet": "Chromepet", "chromepet": "Chromepet",
     "thiruvanmiyur": "Thiruvanmiyur", "tiruvanmiyur": "Thiruvanmiyur",
+    "kilpak": "Kilpauk", "kil pauk": "Kilpauk", "gilpauk": "Kilpauk",
+    "kilpaak": "Kilpauk", "vepary": "Vepery", "veppery": "Vepery",
 }
+
+
+# Single lowercase→canonical lookup (gazetteer + hand-curated drift aliases).
+_LOC_CANON_BY_LOWER: dict[str, str] = {}
+for _names in LOCALITIES.values():
+    for _c in _names:
+        _LOC_CANON_BY_LOWER.setdefault(_c.lower(), _c)
+for _alias, _canon in LOCALITY_ALIASES.items():
+    _LOC_CANON_BY_LOWER.setdefault(_alias, _canon)
+
+# Single-token lower forms eligible for the fuzzy fallback. Multiword names
+# ("anna nagar") are matched only by exact alias/gazetteer — fuzzing a span
+# invites ambiguity. min length 6 keeps short names ("omr", "powai", "khar")
+# off the fuzzy path where a one-edit slip could collide with a real word.
+_LOC_FUZZY_POOL: tuple[str, ...] = tuple(
+    sorted(low for low in _LOC_CANON_BY_LOWER if " " not in low and "." not in low)
+)
+_LOC_FUZZY_MIN_LEN = 6
+
+
+def _edit_distance_le1(a: str, b: str) -> bool:
+    """True iff Levenshtein(a, b) <= 1. Cheap single-pass check (no matrix)."""
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if a == b:
+        return True
+    i = 0
+    while i < min(la, lb) and a[i] == b[i]:
+        i += 1
+    if la == lb:  # one substitution → tails must match
+        return a[i + 1:] == b[i + 1:]
+    if la < lb:  # one insertion into a
+        return a[i:] == b[i + 1:]
+    return a[i + 1:] == b[i:]  # one deletion from a
 
 
 def canonical_locality(raw: str) -> str | None:
     """Map a fuzzy / misspelled locality mention to its canonical name.
 
-    Returns None if no confident match — caller should keep the raw string
-    so the broker can correct manually rather than mis-routing a lead.
+    Exact gazetteer/alias hit first; then a *tight, unambiguous* edit-
+    distance-1 fallback for single tokens (>=6 chars) so new 8kHz STT
+    drifts ("kilpak" → "Kilpauk") repair without enumerating every variant.
+    Returns None when there's no confident match OR the fuzzy hit is
+    ambiguous — caller keeps the raw string rather than mis-routing a lead.
     """
     lower = raw.strip().lower()
     if not lower:
         return None
-    if lower in LOCALITY_ALIASES:
-        return LOCALITY_ALIASES[lower]
-    for metro_localities in LOCALITIES.values():
-        for canonical in metro_localities:
-            if lower == canonical.lower():
-                return canonical
+    if lower in _LOC_CANON_BY_LOWER:
+        return _LOC_CANON_BY_LOWER[lower]
+    if " " not in lower and len(lower) >= _LOC_FUZZY_MIN_LEN:
+        hits = {
+            _LOC_CANON_BY_LOWER[c]
+            for c in _LOC_FUZZY_POOL
+            if _edit_distance_le1(lower, c)
+        }
+        if len(hits) == 1:
+            return next(iter(hits))
     return None
+
+
+_LOC_WORD_RE = re.compile(r"[A-Za-z][A-Za-z.]*")
+
+
+def normalize_localities(text: str) -> str:
+    """Repair *romanized* locality drift from the 8kHz STT before anything
+    reads the transcript (slot extraction, the LLM message, history). The
+    lead said "Kilpauk"; a noisy line drifts it ("kilpak") — left alone the
+    LLM may echo a wrong neighbourhood back (call logs: Kilpauk → wrong
+    area). Scans ASCII word spans (2-grams then 1-grams) and snaps known
+    drifts + tight unambiguous typos to the gazetteer spelling.
+
+    Limits, by design: only ROMAN-script tokens — native-script (Tamil/
+    Devanagari) locality drift is NOT covered (that's the SPC tenant, not
+    the broker vertical this serves). Non-locality words are untouched.
+    """
+    if not text:
+        return text
+    matches = list(_LOC_WORD_RE.finditer(text))
+    if not matches:
+        return text
+    out: list[str] = []
+    last = 0
+    i = 0
+    n = len(matches)
+    while i < n:
+        m = matches[i]
+        replaced: str | None = None
+        span_start, span_end, consumed = m.start(), m.end(), 1
+        if i + 1 < n:  # try a 2-gram first (adjacent, whitespace-only gap)
+            m2 = matches[i + 1]
+            if text[m.end():m2.start()].strip() == "":
+                cand = canonical_locality(f"{m.group(0)} {m2.group(0)}")
+                if cand:
+                    replaced, span_end, consumed = cand, m2.end(), 2
+        if replaced is None:
+            cand = canonical_locality(m.group(0))
+            if cand:
+                replaced = cand
+        if replaced is not None:
+            # Drop a redundant trailing direction word the canonical already
+            # carries ("bandar west" → alias "Bandra West", then a stray
+            # "west" would double it).
+            nxt = i + consumed
+            if nxt < n and text[span_end:matches[nxt].start()].strip() == "":
+                if matches[nxt].group(0).lower() == replaced.rsplit(" ", 1)[-1].lower():
+                    span_end, consumed = matches[nxt].end(), consumed + 1
+            out.append(text[last:span_start])
+            out.append(replaced)
+            last = span_end
+        i += consumed
+    out.append(text[last:])
+    return "".join(out)
 
 
 @dataclass(frozen=True)
