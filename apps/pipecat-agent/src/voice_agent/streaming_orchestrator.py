@@ -24,6 +24,8 @@ import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Mapping, Optional, Protocol
 
+import structlog
+
 from .conversation_state import (
     ConversationState,
     Phase,
@@ -45,6 +47,8 @@ from .sarvam_tts_ws import pcm16_to_wav
 from .qualification import QualificationSlots, extract_slots
 from .prompts import build_system_message, load_priya_prompt
 from .sarvam_stt import STTResult as _STTResult
+
+logger = structlog.get_logger(__name__)
 
 
 # -- Protocols (same as turn_orchestrator but with streaming LLM) -----------
@@ -480,7 +484,7 @@ def spell_numbers_for_tts(text: str) -> str:
 # number sandhi right (hand-rolling Tamil compounds is error-prone).
 try:  # pragma: no cover - import guard; lib is a hard dep in pyproject
     from indic_numtowords import num2words as _indic_num2words
-except Exception:  # noqa: BLE001 - degrade to leaving digits, never crash TTS
+except Exception:  # degrade to leaving digits, never crash TTS on import
     _indic_num2words = None
 
 _NATIVE_NUM_LANG = {"hi-IN": "hi", "ta-IN": "ta"}
@@ -493,7 +497,7 @@ def _native_int_words(n: int, code: str) -> str | None:
         return None
     try:
         return _indic_num2words(n, lang=code).replace(_ZWNJ, "").strip() or None
-    except Exception:  # noqa: BLE001 - unsupported value → caller keeps digits
+    except Exception:  # unsupported value → caller keeps the raw digits
         return None
 
 
@@ -873,10 +877,26 @@ async def run_turn_streaming(
     cache_hits = 0
     first_sentence_done = False
     cap_reached = False
+    llm_failed = False
 
-    async for chunk in deps.llm.stream_respond(system_msg, user_msg):
-        if cap_reached:
-            break  # stop consuming LLM tokens once cap hit
+    # Driven by __anext__ (not `async for`) so an exhaustion error mid-stream
+    # can be caught WITHOUT crashing the turn — see the except below.
+    llm_stream = deps.llm.stream_respond(system_msg, user_msg)
+    while not cap_reached:
+        try:
+            chunk = await llm_stream.__anext__()
+        except StopAsyncIteration:
+            break
+        except Exception as exc:  # never crash the call on an LLM failure
+            # All provider pools exhausted (429) or the stream crashed before
+            # a sentence landed. Don't drop the call / flood tracebacks — fall
+            # through to the dead-air guard, which speaks a short in-language
+            # "hold on" line. The NEXT turn retries (per-key cooldowns rotate).
+            # DURABLE fix: enable LLM billing, not this band-aid.
+            logger.warning("llm stream failed this turn; holding line", error=str(exc))
+            llm_failed = True
+            sentence_buffer = ""  # discard any partial pre-crash fragment
+            break
         sentence_buffer += chunk
 
         # Check for sentence boundary
@@ -964,10 +984,16 @@ async def run_turn_streaming(
     # Dead-air guard: if the whole reply sanitised away to nothing (or the
     # LLM stream yielded zero content — seen when a fallback model spends its
     # token budget on reasoning), the lead must NEVER hear silence. One short
-    # neutral continue-prompt is safe in any call state. Skipped when the
-    # turn is ending anyway — "Ji, boliye?" followed by a hangup is worse.
+    # neutral line is safe in any call state. Skipped when the turn is ending
+    # anyway — "Ji, boliye?" followed by a hangup is worse. When the LLM turn
+    # FAILED outright we say "hold on" instead of "go ahead" — the lead just
+    # spoke and is waiting on us, so asking them to repeat would be wrong.
     if sentence_idx == 0 and not end_call:
-        cont = _continue_line(transition.current_language.value)
+        cont = (
+            _hold_line(transition.current_language.value)
+            if llm_failed
+            else _continue_line(transition.current_language.value)
+        )
         phrase_result = await load_or_synthesize_phrase(
             text=cont,
             lang=transition.current_language.value,
@@ -1226,6 +1252,28 @@ def _continue_line(lang: str) -> str:
     if _native_script_for(lang) and lang in _CONTINUE_LINES_NATIVE:
         return _CONTINUE_LINES_NATIVE[lang]
     return _CONTINUE_LINES.get(lang, _CONTINUE_LINES["en-IN"])
+
+
+# Spoken when the LLM turn fails outright (all provider pools 429 / stream
+# crash). Unlike the continue-line ("go ahead") this is a "hold on" — the
+# lead already spoke and is waiting for Priya, so we must not ask them to
+# repeat. Keeps the line alive; the NEXT turn retries the LLM (per-key
+# cooldowns rotate). The DURABLE fix is enabling LLM billing, not this.
+_HOLD_LINES = {
+    "ta-IN": "Oru second sir.",
+    "en-IN": "One second please, sir.",
+    "hi-IN": "Ek second sir.",
+}
+_HOLD_LINES_NATIVE = {
+    "ta-IN": "ஒரு நிமிஷம் sir.",
+    "hi-IN": "एक सेकंड सर.",
+}
+
+
+def _hold_line(lang: str) -> str:
+    if _native_script_for(lang) and lang in _HOLD_LINES_NATIVE:
+        return _HOLD_LINES_NATIVE[lang]
+    return _HOLD_LINES.get(lang, _HOLD_LINES["en-IN"])
 
 
 def _is_echo_ack(sentence: str, lead_text: str) -> bool:

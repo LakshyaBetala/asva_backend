@@ -826,3 +826,37 @@ def test_real_answer_still_normal():
     from voice_agent.streaming_orchestrator import classify_lead_intent
     c = ConversationState()
     assert classify_lead_intent("I am looking for buying a flat in Kilpauk", c) == "normal"
+
+
+# -- LLM total-exhaustion safety net (all pools 429) --------------------------
+
+class _FailingLLM:
+    """Every provider hop is exhausted — stream_respond raises before any
+    chunk (the real all-pools-429 crash)."""
+
+    async def stream_respond(self, system_message, user_message):
+        raise RuntimeError("429 quota exhausted on all keys")
+        yield  # noqa: unreachable — makes this an async generator
+
+    async def extract(self, prompt):
+        return "{}"
+
+
+@pytest.mark.asyncio
+async def test_llm_exhaustion_speaks_hold_line_not_crash():
+    # The turn must NOT propagate the exception (which dropped the call and
+    # flooded tracebacks) — it falls through to a short in-language hold line.
+    from voice_agent.streaming_orchestrator import _hold_line
+    events = []
+    async for event in run_turn_streaming(
+        ctx=_ctx(), audio_in=b"x",
+        deps=_deps(llm=_FailingLLM()), prior_slots=QualificationSlots(),
+    ):
+        events.append(event)
+
+    complete = [e for e in events if isinstance(e, TurnCompleteEvent)]
+    audio = [e for e in events if isinstance(e, AudioChunkEvent)]
+    assert len(complete) == 1  # turn finished cleanly, no crash
+    hold = _hold_line(complete[0].lead_lang)
+    assert complete[0].priya_full_text == hold  # spoke "hold on", not silence
+    assert any(a.text == hold for a in audio)
