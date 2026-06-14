@@ -743,14 +743,44 @@ def test_native_script_close_words_end_call():
     assert classify_lead_intent("நன்றி", ConversationState()) == "close"
 
 
-def test_numbers_stay_digits_in_native_mode(monkeypatch):
+def test_numbers_localized_in_native_mode(monkeypatch):
+    # Bulbul v3 has no number preprocessing, so digits must be spelled in
+    # the native script (call logs: raw "30000" came out "2 zero hazaar").
     from voice_agent.streaming_orchestrator import prepare_for_tts
     monkeypatch.setenv("TTS_PROVIDER", "sarvam")
     monkeypatch.delenv("TTS_NATIVE_HI", raising=False)
     out = prepare_for_tts("Saturday 9 बजे?", "hi-IN")
-    assert "9" in out and "nine" not in out
-    # Roman path still spells out for the English voice.
+    assert "नौ" in out and "9" not in out  # 9 → नौ, not English "nine"
+    assert "nine" not in out
+    # Roman path still spells out in English for the English voice.
     assert "nine" in prepare_for_tts("visit at 9", "en-IN")
+
+
+def test_native_number_words_hindi_tamil(monkeypatch):
+    from voice_agent.streaming_orchestrator import spell_numbers_native
+    # The exact bug: "30000"/"20000" mangled by Bulbul v3.
+    assert spell_numbers_native("बजट 30000 है", "hi-IN") == "बजट तीस हज़ार है"
+    assert "बीस हज़ार" in spell_numbers_native("rent 20000", "hi-IN")
+    assert "முப்பதாயிரம்" in spell_numbers_native("வாடகை 30000", "ta-IN")
+    # Lakh/crore grouping stays correct.
+    assert "बीस लाख" in spell_numbers_native("2000000 का flat", "hi-IN")
+    # BHK count localizes, BHK token left for the pronunciation pack.
+    assert "तीन BHK" in spell_numbers_native("3 BHK chahiye", "hi-IN")
+    # Tamil ZWNJ must be stripped (it would show as a stray glyph).
+    assert "‌" not in spell_numbers_native("2000 ரூபாய்", "ta-IN")
+
+
+def test_native_number_decimals_and_exclusions():
+    from voice_agent.streaming_orchestrator import spell_numbers_native
+    # Decimal: integer part in words + "point" + per-digit native words.
+    out = spell_numbers_native("2.5 crore", "hi-IN")
+    assert "दो" in out and "दशमलव" in out and "पाँच" in out
+    # Phone numbers (10+ digits) stay digits — read digit-by-digit.
+    assert "9876543210" in spell_numbers_native("number 9876543210", "hi-IN")
+    # Clock times are left intact by the number regex.
+    assert "4:30" in spell_numbers_native("4:30 बजे", "hi-IN")
+    # English voice is untouched by the native speller.
+    assert spell_numbers_native("30000 rent", "en-IN") == "30000 rent"
 
 
 # -- Close gate: don't book on bare intent (call 22c86781) --------------------

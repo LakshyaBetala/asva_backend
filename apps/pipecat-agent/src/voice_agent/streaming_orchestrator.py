@@ -470,6 +470,64 @@ def spell_numbers_for_tts(text: str) -> str:
     return _NUM_RE.sub(_sub, text)
 
 
+# -- Number → NATIVE words (Hindi / Tamil) ---------------------------------
+#
+# Bulbul v3 has NO number preprocessing — enable_preprocessing is a v2-only
+# flag (Sarvam docs). So inside a Devanagari/Tamil sentence the raw digits
+# come out mangled: "20000" → "2 zero hazaar", "30000" misread (call logs).
+# Spell them in-language instead: "30000" → "तीस हज़ार" / "முப்பதாயிரம்".
+# AI4Bharat's indic-numtowords gets the lakh/crore grouping and the Tamil
+# number sandhi right (hand-rolling Tamil compounds is error-prone).
+try:  # pragma: no cover - import guard; lib is a hard dep in pyproject
+    from indic_numtowords import num2words as _indic_num2words
+except Exception:  # noqa: BLE001 - degrade to leaving digits, never crash TTS
+    _indic_num2words = None
+
+_NATIVE_NUM_LANG = {"hi-IN": "hi", "ta-IN": "ta"}
+_DECIMAL_WORD = {"hi": "दशमलव", "ta": "புள்ளி"}
+_ZWNJ = "‌"  # indic-numtowords trails Tamil output with a ZWNJ
+
+
+def _native_int_words(n: int, code: str) -> str | None:
+    if _indic_num2words is None:
+        return None
+    try:
+        return _indic_num2words(n, lang=code).replace(_ZWNJ, "").strip() or None
+    except Exception:  # noqa: BLE001 - unsupported value → caller keeps digits
+        return None
+
+
+def spell_numbers_native(text: str, lang: str) -> str:
+    """Spell digit runs as native Hindi/Tamil number words for Bulbul v3.
+
+    Integers use the Indian lakh/crore speller ("30000" → "तीस हज़ार").
+    Decimals read the integer part in words, then "point" + per-digit
+    native words ("2.5" → "दो दशमलव पाँच"). Phone numbers (10+ digit runs)
+    and clock times (4:30) are excluded by _NUM_RE, so they stay digits
+    and keep being read digit-by-digit. If the lib is missing or a value
+    is unsupported, the original digits are left untouched (no crash)."""
+    code = _NATIVE_NUM_LANG.get(lang)
+    if not code or _indic_num2words is None:
+        return text
+
+    def _sub(m: re.Match) -> str:
+        whole = m.group(1).replace(",", "")
+        if len(whole) > 9:  # defensive: leave huge runs alone
+            return m.group(0)
+        words = _native_int_words(int(whole), code)
+        if words is None:
+            return m.group(0)
+        if m.group(2):  # decimal: "2.5" → "दो दशमलव पाँच"
+            point = _DECIMAL_WORD.get(code, "")
+            digits = " ".join(
+                _native_int_words(int(d), code) or d for d in m.group(2)[1:]
+            )
+            words = f"{words} {point} {digits}".strip()
+        return words
+
+    return _NUM_RE.sub(_sub, text)
+
+
 def prepare_for_tts(
     text: str,
     lang: str,
@@ -485,12 +543,15 @@ def prepare_for_tts(
     cleaned = sanitize_for_tts(text)
     if not cleaned:
         return cleaned
-    # Number spelling ("2000"→"two thousand") is for ROMAN output — inside a
-    # Devanagari/Tamil sentence it produced English words next to native text
-    # ("nine बजे" → heard as "9 bhajay", call 287e6c4d). In native mode keep
-    # the digits; Sarvam's enable_preprocessing reads them in-language
-    # ("9 बजे" → "नौ बजे").
-    if not _native_script_for(lang):
+    # Number spelling. For ROMAN output we spell in English ("2000"→"two
+    # thousand"). For NATIVE output we MUST spell too — Bulbul v3 has no
+    # number preprocessing, so raw "30000" is mangled ("2 zero hazaar",
+    # call logs). spell_numbers_native renders it in-language ("तीस हज़ार",
+    # "முப்பதாயிரம்") with correct lakh/crore. (Earlier we kept digits here
+    # believing enable_preprocessing handled them — that flag is v2-only.)
+    if _native_script_for(lang):
+        cleaned = spell_numbers_native(cleaned, lang)
+    else:
         cleaned = spell_numbers_for_tts(cleaned)
     if pack:
         cleaned = apply_pronunciation_pack(cleaned, pack)

@@ -18,6 +18,12 @@ dependencies = [
     # Streaming STT WebSocket (saaras:v3) — exotel_ws_handler's primary
     # transcription path; batch REST remains the in-call fallback.
     "sarvamai>=0.1.28",
+    # Native Hindi/Tamil number words for TTS. Bulbul v3 has NO number
+    # preprocessing (enable_preprocessing is v2-only), so "30000" is read
+    # raw and mangled ("2 zero hazaar"). AI4Bharat's lib spells it
+    # "तीस हज़ार"/"முப்பதாயிரம்" with correct lakh/crore + Tamil sandhi.
+    # MIT, pure-Python, zero transitive deps.
+    "indic-numtowords>=1.1.0",
 ]
 
 [project.optional-dependencies]
