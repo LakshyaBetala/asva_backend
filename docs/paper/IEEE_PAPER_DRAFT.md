@@ -90,9 +90,9 @@ $$v_s\leftarrow v'_s\ \ \text{iff}\ \ v'_s\neq\varnothing\ \wedge\ \kappa'_s\ge\
 
 The live temperature at turn *k* is
 
-$$\theta_k=\begin{cases}\text{hot},&\beta\ge0.7\ \vee\ (\text{pain}\neq\varnothing\wedge \text{timeline}\le30\,\text{d})\\ \text{warm},&\exists s:\ v_s\neq\varnothing\ \wedge\ \beta\ge0.3\\ \text{cold},&k\ge3\\ \text{unknown},&\text{otherwise.}\end{cases}\tag{5}$$
+$$\theta_k=\begin{cases}\text{hot},&\beta\ge0.7\ \vee\ (\pi\neq\varnothing\wedge \delta\le30)\\ \text{warm},&\exists s:\ v_s\neq\varnothing\ \wedge\ \beta\ge0.3\\ \text{cold},&k\ge3\\ \text{unknown},&\text{otherwise.}\end{cases}\tag{5}$$
 
-After the call, an LLM classifies the full transcript and final slots into {hot, warm, cold, dead} with a 0–100 score; malformed output falls back to a deterministic rule.
+where $\pi$ is the pain-point slot and $\delta$ the stated purchase timeline in days. After the call, an LLM classifies the full transcript and final slots into {hot, warm, cold, dead} with a 0–100 score; malformed output falls back to a deterministic rule.
 
 ### F. Billing, cost and availability
 
@@ -129,7 +129,7 @@ Ensure: audio sentences streamed to the line; X updated
 10:     if SentenceEnd(buf) and i < m then
 11:         a ← CacheGet(hash(buf, voice, ℓ)) or TTS(buf, ℓ)
 12:         Emit(a); i ← i + 1; buf ← ""
-13: if LLM failed for all providers then Emit(TTS(HoldLine(ℓ), ℓ))
+13: if all providers failed then Emit(HoldLine(ℓ))
 14: slots ← Merge(slots, await E)                            ▷ Eq. (4)
 15: Persist(transcript, latencies, slots) asynchronously
 ```

@@ -6,6 +6,7 @@
 | `IEEE_PAPER_DRAFT.md` | 2 | Full IEEE-style draft |
 | `latex/main.tex`, `latex/references.bib`, `latex/figures/` | 3 | IEEEtran conference source for Overleaf (ASCII only) with three vector figures |
 | `ASVA_ieee_overleaf.zip` | 3 | `main.tex`, `references.bib` and `figures/` zipped for Overleaf "Upload Project" |
+| `ASVA_IEEE_paper.pdf` | final | The paper, 7 pages, IEEE two-column (printed from `print/paper.html`, same text as `main.tex`) |
 | `eval/` | — | Scripts and raw output behind every number in the paper |
 
 ## Reproducing the numbers

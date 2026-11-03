@@ -125,14 +125,14 @@ v_s \leftarrow v'_s \quad\text{iff}\quad v'_s\neq\varnothing \;\wedge\; \kappa'_
 The live temperature at turn $k$ is
 \begin{equation}
 \theta_k=\begin{cases}
-\text{hot}, & \beta\geq 0.7 \;\vee\; (\text{pain}\neq\varnothing \wedge \text{timeline}\leq 30\ \text{days}),\\
+\text{hot}, & \beta\geq 0.7 \;\vee\; (\pi\neq\varnothing \wedge \delta\leq 30),\\
 \text{warm}, & \exists s:\ v_s\neq\varnothing \;\wedge\; \beta\geq 0.3,\\
 \text{cold}, & k\geq 3,\\
 \text{unknown}, & \text{otherwise}.
 \end{cases}
 \label{eq:temp}
 \end{equation}
-After the call, an LLM classifies the full transcript and final slots into hot, warm, cold or dead with a score in $[0,100]$; malformed output falls back to a deterministic rule.
+where $\pi$ is the pain-point slot and $\delta$ the stated purchase timeline in days. After the call, an LLM classifies the full transcript and final slots into hot, warm, cold or dead with a score in $[0,100]$; malformed output falls back to a deterministic rule.
 
 \subsection{Billing, Cost and Availability}
 Billed credits for a completed call of duration $d$ seconds are
@@ -181,7 +181,7 @@ Algorithm~\ref{alg:turn} summarises one streaming turn.
     \State $\textsc{Emit}(a)$;\ $i\gets i+1$;\ $\mathit{buf}\gets\epsilon$
   \EndIf
 \EndFor
-\If{all LLM providers failed} \State $\textsc{Emit}(\textsc{TTS}(\textsc{HoldLine}(\ell),\ell))$ \EndIf
+\If{all providers failed} \State $\textsc{Emit}(\textsc{HoldLine}(\ell))$ \EndIf
 \State $\mathit{slots}\gets\textsc{Merge}(\mathit{slots},\textbf{await }E)$ \Comment{Eq.~\eqref{eq:merge}}
 \State $\textsc{PersistAsync}(\mathit{transcript},\mathit{latencies},\mathit{slots})$
 \end{algorithmic}

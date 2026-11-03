@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sub-Two-Second Multilingual Voice Agents for Outbound Lead Qualification</title>
+<style>
+@page { size: letter; margin: 0.75in 0.625in 1in 0.625in; }
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; font-family: "Times New Roman", Times, serif; font-size: 10pt; line-height: 1.16; color: #000; background: #fff; }
+p { margin: 0; text-align: justify; hyphens: auto; text-indent: 1em; }
+p.noindent, .abstract p, .keywords p { text-indent: 0; }
+.title { text-align: center; font-size: 22pt; line-height: 1.12; margin: 0 0.2in 10pt; font-weight: normal; }
+.authors { text-align: center; font-size: 10pt; margin-bottom: 14pt; line-height: 1.25; }
+.authors .name { font-size: 11pt; }
+.cols { column-count: 2; column-gap: 0.25in; column-fill: balance; }
+.abstract, .keywords { font-size: 9pt; font-weight: bold; line-height: 1.18; text-align: justify; }
+.abstract { margin-bottom: 6pt; }
+.keywords { margin-bottom: 8pt; }
+.abstract em, .keywords em { font-style: italic; }
+h2 { font-size: 10pt; font-weight: normal; font-variant: small-caps; letter-spacing: 0.02em; text-align: center; margin: 9pt 0 4pt; break-after: avoid; }
+h3 { font-size: 10pt; font-weight: normal; font-style: italic; margin: 6pt 0 3pt; break-after: avoid; }
+ul.contrib { margin: 2pt 0 2pt 0; padding-left: 1.1em; }
+ul.contrib li { text-align: justify; margin-bottom: 1.5pt; }
+.eq { display: flex; align-items: center; margin: 5pt 0; break-inside: avoid; }
+.eq math { flex: 1; font-size: 10.5pt; }
+.eq .n { width: 2.2em; text-align: right; }
+math { font-family: "Cambria Math", "STIX Two Math", serif; }
+figure { margin: 6pt 0 8pt; break-inside: avoid; text-align: center; }
+figure.wide { column-span: all; margin: 4pt 0 10pt; }
+figure img { width: 100%; display: block; }
+figcaption { font-size: 8pt; text-align: justify; margin-top: 4pt; line-height: 1.2; }
+figcaption b { font-weight: normal; }
+.tbl { margin: 6pt 0 8pt; break-inside: avoid; }
+.tbl.wide { column-span: all; margin: 4pt 0 10pt; }
+.tcap { text-align: center; font-size: 8pt; line-height: 1.25; margin-bottom: 3pt; }
+.tcap .tn { font-variant: small-caps; letter-spacing: 0.04em; display: block; }
+.tcap .tt { font-variant: small-caps; }
+table { border-collapse: collapse; width: 100%; font-size: 8pt; line-height: 1.2; }
+thead tr { border-top: 1pt solid #000; border-bottom: 0.6pt solid #000; }
+tbody tr:last-child { border-bottom: 1pt solid #000; }
+tr.mid { border-top: 0.6pt solid #000; }
+th { font-weight: normal; text-align: left; padding: 2.5pt 4pt; }
+td { padding: 2pt 4pt; vertical-align: top; }
+td.r, th.r { text-align: right; }
+.alg { border-top: 1pt solid #000; border-bottom: 1pt solid #000; margin: 6pt 0 8pt; font-size: 8.6pt; break-inside: avoid; line-height: 1.28; }
+.alg .head { border-bottom: 0.6pt solid #000; padding: 2pt 0; }
+.alg ol { margin: 2pt 0 3pt; padding-left: 2.1em; }
+.alg li { padding-left: 0.2em; }
+.alg li::marker { font-size: 7.5pt; }
+.alg .i1 { padding-left: 1.2em; } .alg .i2 { padding-left: 2.4em; } .alg .i3 { padding-left: 3.6em; }
+.alg .c { float: right; font-style: italic; }
+.kw { font-weight: bold; }
+.sc { font-variant: small-caps; }
+code, .tt { font-family: "Courier New", monospace; font-size: 9pt; }
+.refs { font-size: 8pt; line-height: 1.2; }
+.refs ol { margin: 0; padding-left: 2.2em; }
+.refs li { margin-bottom: 2.5pt; text-align: left; }
+.refs li::marker { content: "[" counter(list-item) "] "; }
+</style>
+</head>
+<body>
+
+<div class="title">Sub-Two-Second Multilingual Voice Agents for Outbound Lead Qualification: Sentence-Pipelined Streaming, Hysteresis Language Control and Database-Enforced Tenancy</div>
+<div class="authors"><span class="name">[Author 1], [Author 2], [Author 3]</span><br><i>[Department], [Institution]</i><br>[City], India<br>{author1, author2, author3}@[institution].edu</div>
+
+<div class="cols">
+
+<div class="abstract"><p><i>Abstract</i>&#8212;Outbound qualification of sales leads in India requires an agent that converses in English, Hindi and Tamil over narrowband telephony, tolerates code-mixing, and records every interaction under strict tenant separation. Cascaded speech pipelines meet these requirements poorly: response delay accumulates across recognition, generation and synthesis, and per-utterance language identification flips the conversation language on short or misrecognised utterances. This paper presents ASVA, a streaming voice agent that pipelines language-model output into sentence-level speech synthesis while a concurrent extractor fills eight qualification slots, controls the reply language with a hysteresis state machine, serves recurrent phrases from a content-addressed audio cache, and persists calls in a PostgreSQL schema whose tenant isolation and duration billing are enforced by row-level security and triggers. Over 421 logged turns from 52 pilot calls, the median time from end of speech to first agent audio was 1.57&#8201;s, and 77.6% of turns were answered within 2&#8201;s. Turns using server-side streaming recognition exhibited a 21% lower median delay than batch recognition, and turns served from the phrase cache a 39% lower median than synthesised turns. First-sentence generation accounted for 50.6% of the mean delay, identifying the language model as the dominant bottleneck; a controlled benchmark of three hosted models and three synthesis services quantifies the remaining headroom. Execution-based verification of the schema exposed three latent defects that would have rejected long calls, halted dispatch and nullified tenant claims. The results indicate that sub-two-second multilingual telephony agents are attainable with commodity cloud services when latency, language control and data integrity are treated as first-class design constraints.</p></div>
+<div class="keywords"><p><i>Index Terms</i>&#8212;spoken dialogue systems, speech recognition, code-switching, large language models, multi-tenant databases, latency</p></div>
+
+<h2>I. Introduction</h2>
+<p>Lead lists purchased by small brokers and business-to-business sellers decay quickly: a lead that is not contacted within minutes is frequently lost to a competitor. In India the contact must additionally happen in the lead&#8217;s preferred language, which in a single metropolitan market such as Chennai spans English, Hindi and Tamil, often mixed within one sentence. Automating this first conversation with a voice agent is attractive, but three engineering constraints dominate its feasibility.</p>
+<p>First, conversational turn-taking is fast. Cross-linguistic studies place the modal gap between turns near 200&#8201;ms [1], and long silences are attributed to inattention or to a machine [2]. A cascaded agent&#8212;automatic speech recognition (ASR), a large language model (LLM) and text-to-speech (TTS)&#8212;incurs a network round trip to each service per turn, over 8&#8201;kHz telephone audio that degrades recognition. Second, per-utterance language identification is unreliable precisely on the utterances most common in calls: one-word backchannels such as <i>haan</i> or <i>ok</i>, and English speech transcribed in an Indic script by a streaming recogniser. A policy of replying in the detected language consequently switches language mid-call. Third, a commercial deployment serves many customer organisations whose leads, transcripts and billing must be isolated; application-level filtering alone leaves isolation dependent on every query being written correctly.</p>
+<p>Existing work addresses these problems separately: end-of-query detection and turn-taking models reduce endpointing delay [2], [3]; multilingual recognisers and Indic speech benchmarks improve recognition [4]&#8211;[6]; code-switching research characterises mixed-language speech [7]; and multi-tenant database designs address shared schemas [8]. Few published systems combine them into an operating telephony agent and report per-stage latency from real calls in Indian languages.</p>
+<p>The principal contributions of this work are as follows:</p>
+<ul class="contrib">
+<li>A sentence-pipelined streaming orchestration in which LLM tokens are segmented at sentence boundaries and each sentence is synthesised and transmitted while generation continues, with qualification-slot extraction executed concurrently off the critical path and a two-sentence output cap per turn.</li>
+<li>A hysteresis language state machine for code-mixed calls combining confidence gating, a two-utterance switch hysteresis, explicit switch requests, and script evidence treated as a vote rather than a decision.</li>
+<li>A two-tier phrase cache and endpointing policy for narrowband audio: content-addressed TTS reuse with a single voice pinned across languages, and server-side endpointing with merge and dangling-fragment holds over an amplitude-VAD fallback.</li>
+</ul>
+<figure class="wide">
+<img src="../latex/figures/fig_architecture.png" alt="System architecture">
+<figcaption><b>Fig. 1.</b>&#8195;System architecture. A call is requested through <span class="tt">POST /exotel/calls</span>; the session handler exchanges 8&#8201;kHz audio with the telephony provider and drives the turn engine, whose stages run left to right with the phase machine and a concurrent slot extractor beside the LLM stream. Writes are asynchronous; the CRM and workers access PostgreSQL under row-level security.</figcaption>
+</figure>
+<div class="tbl wide">
+<div class="tcap"><span class="tn">Table I</span><span class="tt">Design Properties of Voice-Agent Paradigms</span></div>
+<table>
+<thead><tr><th>Paradigm</th><th>Generation-to-TTS</th><th>Language control</th><th>Structured extraction</th><th>Tenant isolation</th></tr></thead>
+<tbody>
+<tr><td>Sequential cascade (ASR, LLM, TTS)</td><td>sequential</td><td>follow utterance LID</td><td>post-call only</td><td>application level</td></tr>
+<tr><td>Endpointing-optimised pipelines [2], [3]</td><td>partially streamed</td><td>not addressed</td><td>not addressed</td><td>not addressed</td></tr>
+<tr><td>Multilingual ASR/TTS models [4], [5], [10]</td><td>n/a</td><td>model-level LID</td><td>n/a</td><td>n/a</td></tr>
+<tr><td>This work</td><td>sentence-pipelined</td><td>hysteresis state machine</td><td>concurrent, confidence-merged</td><td>row-level security and triggers</td></tr>
+</tbody></table>
+</div>
+<ul class="contrib">
+<li>A database-enforced tenancy and billing design&#8212;row-level security keyed on a token claim, trigger-computed tiered billing and SQL spend guards&#8212;together with an execution-based verification that exposed three latent defects.</li>
+<li>An empirical characterisation from 421 logged turns and a controlled provider benchmark, including observational ablations of streaming recognition and caching.</li>
+</ul>
+<p>Section II reviews related work. Section III formalises the architecture and its algorithms. Section IV describes the implementation and evaluation. Section V discusses scalability and limitations, and Section VI concludes.</p>
+
+<h2>II. Related Work</h2>
+<h3>A. Turn-Taking and Response Latency in Spoken Dialogue</h3>
+<p>Stivers et al. [1] measured turn transitions across ten languages and found a shared preference for minimal gaps. Skantze [2] surveys turn-taking models for conversational systems and identifies endpointing and response generation as the primary sources of machine delay. Shannon et al. [3] replace silence timeouts with a learned end-of-query detector in streaming ASR, reducing endpoint latency without increasing cut-offs. Dean and Barroso [9] show that tail latency governs perceived responsiveness in multi-service systems. The present work adopts server-side endpointing in the spirit of [3], adds conversational merge and dangling-fragment holds, attacks the generation component with sentence pipelining, and reports tail percentiles following [9].</p>
+<h3>B. Multilingual and Code-Switched Speech for Indian Languages</h3>
+<p>Weakly supervised multilingual ASR [4] and massively multilingual speech models [5] extend recognition to many Indian languages, while IndicSUPERB [6] benchmarks Indic speech tasks. Kumar et al. [10] build TTS for Indian languages at scale, and conditional variational TTS [11] underlies many modern neural voices. Sitaram et al. [7] survey code-switched speech processing and note that utterance-level language identification is unreliable for short and mixed utterances. Rather than improving language identification itself, the present work treats its output as noisy evidence and controls the reply language with a hysteresis state machine.</p>
+<h3>C. LLM Agents, Lead Qualification and Multi-Tenant Data</h3>
+<p>General-purpose LLMs such as Gemini [12] enable open-domain dialogue but introduce hallucination risk [13], which motivates constrained outputs and structured extraction. Predictive lead scoring has been studied with conventional classifiers over CRM features [14]; here qualification is performed conversationally and scored from the transcript. Aulbach et al. [8] compare schema-mapping techniques for multi-tenant databases; the present design uses a shared schema with PostgreSQL row-level security [15] so that isolation is enforced by the database engine. Open-source frameworks such as Pipecat [16] provide pipeline primitives on which the implementation builds. Table I contrasts the design properties of these paradigms.</p>
+
+
+<h2>III. Proposed Architecture and Methodology</h2>
+<h3>A. System Overview</h3>
+<p>The system comprises (i) a telephony layer that dials the lead and exchanges 8&#8201;kHz 16-bit PCM over a WebSocket; (ii) a session handler that performs endpointing, barge-in detection and call-context resolution; (iii) a turn engine that runs recognition, normalisation, language control, streaming generation and sentence synthesis; (iv) dialogue controllers, namely a language state machine and a monotone phase machine; (v) a concurrent slot extractor and a post-call scorer; and (vi) a PostgreSQL persistence layer with row-level security, accessed by the agent, by serverless workers (dispatch, scoring, hand-off) and by a CRM that receives realtime updates (Fig. 1).</p>
+
+
+<h3>B. Latency Model</h3>
+<p>For turn <i>k</i>, the perceived response delay is the time to first audio</p>
+<div class="eq"><math display="block"><mrow><msub><mtext>TTFA</mtext><mi>k</mi></msub><mo>=</mo><msub><mi mathvariant="normal">&#916;</mi><mtext>EP</mtext></msub><mo>+</mo><msub><mi mathvariant="normal">&#916;</mi><mtext>STT</mtext></msub><mo>+</mo><msub><mi mathvariant="normal">&#916;</mi><mtext>pre</mtext></msub><mo>+</mo><msub><mi mathvariant="normal">&#916;</mi><mrow><mtext>LLM</mtext><mo>,</mo><mn>1</mn></mrow></msub><mo>+</mo><msub><mi mathvariant="normal">&#916;</mi><mrow><mtext>TTS</mtext><mo>,</mo><mn>1</mn></mrow></msub><mo>+</mo><msub><mi mathvariant="normal">&#916;</mi><mtext>net</mtext></msub><mo>,</mo></mrow></math><span class="n">(1)</span></div>
+<p class="noindent">where the terms denote endpointing, recognition, pre-processing, generation of the first sentence, synthesis of the first sentence and transmission. The instrumented quantity is</p>
+<div class="eq"><math display="block"><mrow><msub><mover><mi>T</mi><mo>^</mo></mover><mi>k</mi></msub><mo>=</mo><msub><mi mathvariant="normal">&#916;</mi><mtext>STT</mtext></msub><mo>+</mo><msub><mi mathvariant="normal">&#916;</mi><mrow><mtext>LLM</mtext><mo>,</mo><mn>1</mn></mrow></msub><mo>+</mo><msub><mi mathvariant="normal">&#916;</mi><mrow><mtext>TTS</mtext><mo>,</mo><mn>1</mn></mrow></msub><mo>.</mo></mrow></math><span class="n">(2)</span></div>
+<p class="noindent">A sequential cascade presents <math><mrow><msubsup><mo>&#8721;</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>m</mi></msubsup><mo>(</mo><msub><mi mathvariant="normal">&#916;</mi><mrow><mtext>LLM</mtext><mo>,</mo><mi>i</mi></mrow></msub><mo>+</mo><msub><mi mathvariant="normal">&#916;</mi><mrow><mtext>TTS</mtext><mo>,</mo><mi>i</mi></mrow></msub><mo>)</mo></mrow></math> for an <i>m</i>-sentence reply; sentence pipelining reduces the perceived component to <math><mrow><msub><mi mathvariant="normal">&#916;</mi><mrow><mtext>LLM</mtext><mo>,</mo><mn>1</mn></mrow></msub><mo>+</mo><msub><mi mathvariant="normal">&#916;</mi><mrow><mtext>TTS</mtext><mo>,</mo><mn>1</mn></mrow></msub></mrow></math> because sentence <i>i</i>&#8201;&#8805;&#8201;2 is produced during playback of sentence <i>i</i>&#8722;1. With a cap <i>m</i>&#8201;&#8804;&#8201;2, turn wall time is bounded by two sentences of playback. When the recogniser has finalised the transcript at the endpoint, &#916;<sub>STT</sub>&#8201;&#8776;&#8201;0.</p>
+
+<h3>C. Endpointing</h3>
+<p>In streaming mode the recogniser&#8217;s voice-activity model emits a final segment; the turn is held for a grace window <i>g</i>&#8201;=&#8201;400&#8201;ms, extended while speech activity is reported, and a segment ending in a dangling fragment is held an additional <i>h</i>&#8201;=&#8201;700&#8201;ms and merged with its continuation. In fallback mode, 100&#8201;ms frames with peak amplitude below 300 are silent and a turn closes after <i>s</i>&#8201;=&#8201;750&#8201;ms of silence, with a minimum utterance of 400&#8201;ms and a maximum of 8&#8201;s. Barge-in flushes queued agent audio when input peak amplitude exceeds 2500 for 500&#8201;ms.</p>
+
+<h3>D. Language State Machine</h3>
+<p>Let &#8466;&#8201;=&#8201;{en,&#8201;hi,&#8201;ta} and let an utterance be <i>u</i>&#8201;=&#8201;(<i>&#955;</i>,&#8201;<i>c</i>,&#8201;<i>w</i>,&#8201;<i>&#963;</i>,&#8201;<i>x</i>): recogniser label, confidence, word count, detected script and text. The state is (<i>&#8467;</i>,&#8201;<i>p</i>,&#8201;<i>n</i>): current language, pending language and pending count. With threshold <i>&#964;<sub>c</sub></i>&#8201;=&#8201;0.75 and hysteresis <i>H</i>&#8201;=&#8201;2,</p>
+<div class="eq"><math display="block"><mrow><msup><mi>&#8467;</mi><mo>&#8242;</mo></msup><mo>=</mo><mrow><mo stretchy="true">{</mo><mtable>
+<mtr><mtd style="text-align:left"><mi>m</mi><mo>,</mo></mtd><mtd style="text-align:left;padding-left:0.8em"><mi>x</mi><mtext>&#160;requests&#160;</mtext><mi>m</mi><mo>&#8800;</mo><mi>&#8467;</mi><mo>,</mo></mtd></mtr>
+<mtr><mtd style="text-align:left"><mi>&#963;</mi><mo>,</mo></mtd><mtd style="text-align:left;padding-left:0.8em"><mi>&#963;</mi><mo>&#8713;</mo><mo>{</mo><mi>&#8709;</mi><mo>,</mo><mi>&#8467;</mi><mo>}</mo><mo>,</mo><mspace width="0.3em"/><mi>w</mi><mo>&#8805;</mo><mn>2</mn><mo>,</mo><mspace width="0.3em"/><mo>&#172;</mo><mtext>ack</mtext><mo>(</mo><mi>x</mi><mo>)</mo><mo>,</mo><mspace width="0.3em"/><msup><mi>n</mi><mo>&#8242;</mo></msup><mo>&#8805;</mo><mi>H</mi><mo>,</mo></mtd></mtr>
+<mtr><mtd style="text-align:left"><mi>&#955;</mi><mo>,</mo></mtd><mtd style="text-align:left;padding-left:0.8em"><mi>c</mi><mo>&#8805;</mo><msub><mi>&#964;</mi><mi>c</mi></msub><mo>,</mo><mspace width="0.3em"/><mi>w</mi><mo>&#8805;</mo><mn>3</mn><mo>,</mo><mspace width="0.3em"/><mi>&#955;</mi><mo>&#8800;</mo><mi>&#8467;</mi><mo>,</mo><mspace width="0.3em"/><msup><mi>n</mi><mo>&#8242;</mo></msup><mo>&#8805;</mo><mi>H</mi><mo>,</mo></mtd></mtr>
+<mtr><mtd style="text-align:left"><mi>&#8467;</mi><mo>,</mo></mtd><mtd style="text-align:left;padding-left:0.8em"><mtext>otherwise,</mtext></mtd></mtr>
+</mtable></mrow></mrow></math><span class="n">(3)</span></div>
+<p class="noindent">where <i>n</i>&#8242; is the pending count after the update (<i>n</i>&#8242;&#8201;=&#8201;<i>n</i>+1 if the candidate equals <i>p</i>, otherwise <i>n</i>&#8242;&#8201;=&#8201;1 and <i>p</i> is reset to the candidate). Code-mixed utterances never switch <i>&#8467;</i>; they only inform the response hint. On a switch, a bridge phrase for the pair (<i>&#8467;</i>,&#8201;<i>&#8467;</i>&#8242;) is spoken. The machine trades a delay of at most <i>H</i>&#8722;1 turns for genuine, unrequested switches against robustness to single misrecognised or backchannel utterances.</p>
+
+<h3>E. Dialogue Phases, Slots and Scoring</h3>
+<p>The phase <i>&#966;</i>(<i>t</i>) is monotone non-decreasing in elapsed time with boundaries at 8, 35, 70, 130 and 140&#8201;s (greeting, connect, discover, qualify, close), and an extension phase until 290&#8201;s admitted only if the buying confidence satisfies <i>&#946;</i>&#8201;&#8805;&#8201;0.6; the boundaries precede the billing boundaries of (6). Eight slots <i>s</i> carry values <i>v<sub>s</sub></i> and confidences <i>&#954;<sub>s</sub></i>. A concurrent extractor returns (<i>v</i>&#8242;<sub><i>s</i></sub>,&#8201;<i>&#954;</i>&#8242;<sub><i>s</i></sub>), merged by</p>
+<div class="eq"><math display="block"><mrow><msub><mi>v</mi><mi>s</mi></msub><mo>&#8592;</mo><msubsup><mi>v</mi><mi>s</mi><mo>&#8242;</mo></msubsup><mspace width="1em"/><mtext>iff</mtext><mspace width="1em"/><msubsup><mi>v</mi><mi>s</mi><mo>&#8242;</mo></msubsup><mo>&#8800;</mo><mi>&#8709;</mi><mspace width="0.4em"/><mo>&#8743;</mo><mspace width="0.4em"/><msubsup><mi>&#954;</mi><mi>s</mi><mo>&#8242;</mo></msubsup><mo>&#8805;</mo><msub><mi>&#954;</mi><mi>s</mi></msub><mo>.</mo></mrow></math><span class="n">(4)</span></div>
+<p class="noindent">The live temperature at turn <i>k</i> is</p>
+<div class="eq"><math display="block"><mrow><msub><mi>&#952;</mi><mi>k</mi></msub><mo>=</mo><mrow><mo stretchy="true">{</mo><mtable>
+<mtr><mtd style="text-align:left"><mtext>hot,</mtext></mtd><mtd style="text-align:left;padding-left:0.8em"><mi>&#946;</mi><mo>&#8805;</mo><mn>0.7</mn><mspace width="0.3em"/><mo>&#8744;</mo><mspace width="0.3em"/><mo>(</mo><mi>&#960;</mi><mo>&#8800;</mo><mi>&#8709;</mi><mo>&#8743;</mo><mi>&#948;</mi><mo>&#8804;</mo><mn>30</mn><mo>)</mo><mo>,</mo></mtd></mtr>
+<mtr><mtd style="text-align:left"><mtext>warm,</mtext></mtd><mtd style="text-align:left;padding-left:0.8em"><mo>&#8707;</mo><mi>s</mi><mo>:</mo><msub><mi>v</mi><mi>s</mi></msub><mo>&#8800;</mo><mi>&#8709;</mi><mspace width="0.3em"/><mo>&#8743;</mo><mspace width="0.3em"/><mi>&#946;</mi><mo>&#8805;</mo><mn>0.3</mn><mo>,</mo></mtd></mtr>
+<mtr><mtd style="text-align:left"><mtext>cold,</mtext></mtd><mtd style="text-align:left;padding-left:0.8em"><mi>k</mi><mo>&#8805;</mo><mn>3</mn><mo>,</mo></mtd></mtr>
+<mtr><mtd style="text-align:left"><mtext>unknown,</mtext></mtd><mtd style="text-align:left;padding-left:0.8em"><mtext>otherwise.</mtext></mtd></mtr>
+</mtable></mrow></mrow></math><span class="n">(5)</span></div>
+<p class="noindent">where <i>&#960;</i> is the pain-point slot and <i>&#948;</i> the stated purchase timeline in days. After the call, an LLM classifies the full transcript and final slots into hot, warm, cold or dead with a score in [0,&#8201;100]; malformed output falls back to a deterministic rule.</p>
+
+<h3>F. Billing, Cost and Availability</h3>
+<p>Billed credits for a completed call of duration <i>d</i> seconds are</p>
+<div class="eq"><math display="block"><mrow><mi>b</mi><mo>(</mo><mi>d</mi><mo>)</mo><mo>=</mo><mi>min</mi><mo>(</mo><mn>4</mn><mo>,</mo><mo>&#8968;</mo><mi>d</mi><mo>/</mo><mn>150</mn><mo>&#8969;</mo><mo>)</mo><mo>,</mo></mrow></math><span class="n">(6)</span></div>
+<p class="noindent">computed identically in the agent and by a <span class="tt">BEFORE INSERT OR UPDATE</span> trigger. The per-call variable cost is</p>
+<div class="eq"><math display="block"><mtable>
+<mtr><mtd style="text-align:left"><mi>C</mi><mo>=</mo><mfrac><msub><mi>t</mi><mi>L</mi></msub><mn>60</mn></mfrac><msub><mi>r</mi><mtext>STT</mtext></msub><mo>+</mo><mi>max</mi><mrow><mo>(</mo><mn>0</mn><mo>,</mo><mfrac><msub><mi>t</mi><mi>A</mi></msub><mn>60</mn></mfrac><msub><mi>r</mi><mtext>TTS</mtext></msub><mo>&#8722;</mo><mi>h</mi><msub><mi>s</mi><mi>c</mi></msub><mo>)</mo></mrow></mtd></mtr>
+<mtr><mtd style="text-align:left;padding-left:1.4em"><mo>+</mo><mfrac><mi>T</mi><mn>60</mn></mfrac><msub><mi>r</mi><mtext>tel</mtext></msub><mo>+</mo><mi>n</mi><msub><mi>c</mi><mtext>LLM</mtext></msub><mo>+</mo><msub><mi>c</mi><mn>0</mn></msub><mo>,</mo></mtd></mtr>
+</mtable></math><span class="n">(7)</span></div>
+<p class="noindent">with lead and agent speech times <i>t<sub>L</sub></i>, <i>t<sub>A</sub></i>, duration <i>T</i>, <i>n</i> LLM turns and <i>h</i> cache hits; the constants are INR&#8201;3.00/min, INR&#8201;3.00/min, INR&#8201;0.10 per hit, INR&#8201;1.80/min, INR&#8201;0.015 per turn and INR&#8201;0.20. For a 180&#8201;s call with <i>t<sub>L</sub></i>&#8201;=&#8201;<i>t<sub>A</sub></i>&#8201;=&#8201;72&#8201;s, <i>n</i>&#8201;=&#8201;30 and <i>h</i>&#8201;=&#8201;0, <i>C</i>&#8201;=&#8201;INR&#8201;13.25. A dispatcher admits a call iff the SQL-computed spend for the current IST day plus the projection does not exceed the tenant cap. LLM availability uses per-call key rotation over a provider pool, fallback to an OpenAI-compatible endpoint on HTTP 429, and a localised hold utterance when all providers fail.</p>
+
+<h3>G. Tenant Isolation</h3>
+<p>For a relation <i>R</i> with column <span class="tt">tenant_id</span>, the policy predicate is <i>P<sub>R</sub></i>(<i>r</i>)&#8201;&#8801;&#8201;<i>r</i>.tenant&#8201;=&#8201;<i>&#964;</i>(<i>J</i>), where <i>&#964;</i>(<i>J</i>) reads the tenant claim of the request token <i>J</i>, injected at issuance by a login hook. A child relation <i>R<sub>c</sub></i> referencing <i>R<sub>p</sub></i> uses <i>P</i><sub><i>R<sub>c</sub></i></sub>(<i>r</i>)&#8201;&#8801;&#8201;&#8707;<i>q</i>&#8201;&#8712;&#8201;<i>R<sub>p</sub></i>&#8201;:&#8201;<i>q</i>.id&#8201;=&#8201;<i>r</i>.fk&#8201;&#8743;&#8201;<i>q</i>.tenant&#8201;=&#8201;<i>&#964;</i>(<i>J</i>). Inserts are guarded by the same predicates through <span class="tt">WITH CHECK</span>.</p>
+
+<h3>H. Turn Algorithm</h3>
+<p>Algorithm 1 summarises one streaming turn.</p>
+<div class="alg">
+<div class="head"><span class="kw">Algorithm 1</span> Streaming turn</div>
+<div style="padding:2pt 0 0 0.3em"><span class="kw">Require:</span> utterance <i>u</i>, call context <i>X</i>, sentence cap <i>m</i>&#8201;=&#8201;2<br><span class="kw">Ensure:</span> audio sentences streamed to the line; <i>X</i> updated</div>
+<ol>
+<li><span class="kw">if</span> <i>u</i> is audio <span class="kw">then</span></li>
+<li class="i1"><i>x</i> &#8592; <span class="sc">STT</span>(<i>u</i>)</li>
+<li><span class="kw">else</span></li>
+<li class="i1"><i>x</i> &#8592; <i>u</i>.<i>text</i><span class="c">&#9655; pre-finalised by streaming STT</span></li>
+<li><span class="kw">end if</span></li>
+<li><i>x</i> &#8592; <span class="sc">NormaliseEntities</span>(<i>x</i>)</li>
+<li>(<i>&#8467;</i>, <i>bridge</i>) &#8592; <span class="sc">LanguageFSM</span>(<i>x</i>, <i>&#955;</i>, <i>c</i>)<span class="c">&#9655; Eq. (3)</span></li>
+<li><span class="kw">if</span> <i>bridge</i> &#8800; &#8709; <span class="kw">then</span> <span class="sc">Emit</span>(<span class="sc">TTS</span>(<i>bridge</i>, <i>&#8467;</i>)) <span class="kw">end if</span></li>
+<li><i>&#966;</i> &#8592; <span class="sc">Phase</span>(<i>t</i>, <i>&#946;</i>)</li>
+<li><i>E</i> &#8592; <span class="kw">async</span> <span class="sc">ExtractSlots</span>(<i>x</i>)<span class="c">&#9655; off critical path</span></li>
+<li><i>buf</i> &#8592; &#949;; <i>i</i> &#8592; 0</li>
+<li><span class="kw">for</span> token <i>&#964;</i> in <span class="sc">LLMStream</span>(<i>x</i>, <i>&#8467;</i>, <i>&#966;</i>, <i>slots</i>) <span class="kw">do</span></li>
+<li class="i1"><i>buf</i> &#8592; <i>buf</i> &#8214; <i>&#964;</i></li>
+<li class="i1"><span class="kw">if</span> <span class="sc">SentenceEnd</span>(<i>buf</i>) <span class="kw">and</span> <i>i</i> &lt; <i>m</i> <span class="kw">then</span></li>
+<li class="i2"><i>a</i> &#8592; <span class="sc">CacheGet</span>(<span class="sc">hash</span>(<i>buf</i>, <i>v</i>, <i>&#8467;</i>))</li>
+<li class="i2"><span class="kw">if</span> <i>a</i> = &#8709; <span class="kw">then</span> <i>a</i> &#8592; <span class="sc">TTS</span>(<i>buf</i>, <i>&#8467;</i>) <span class="kw">end if</span></li>
+<li class="i2"><span class="sc">Emit</span>(<i>a</i>); <i>i</i> &#8592; <i>i</i>+1; <i>buf</i> &#8592; &#949;</li>
+<li class="i1"><span class="kw">end if</span></li>
+<li><span class="kw">end for</span></li>
+<li><span class="kw">if</span> all providers failed <span class="kw">then</span> <span class="sc">Emit</span>(<span class="sc">HoldLine</span>(<i>&#8467;</i>)) <span class="kw">end if</span></li>
+<li><i>slots</i> &#8592; <span class="sc">Merge</span>(<i>slots</i>, <span class="kw">await</span> <i>E</i>)<span class="c">&#9655; Eq. (4)</span></li>
+<li><span class="sc">PersistAsync</span>(<i>transcript</i>, <i>latencies</i>, <i>slots</i>)</li>
+</ol>
+</div>
+
+<h2>IV. Implementation and Experimental Evaluation</h2>
+<h3>A. Implementation and Environment</h3>
+<p>The agent is written in Python (FastAPI, asyncio, httpx, Pydantic) on the Pipecat framework [16]; workers run on Cloudflare Workers (TypeScript); the CRM is a Next.js application; persistence is PostgreSQL 17 with 13 tables, 36 indexes, 37 tenant-isolation policies, one view, four functions and one trigger across 18 migrations. Recognition uses a commercial Indic streaming recogniser with batch fallback; generation uses Gemini 2.5 Flash with an OpenAI-compatible fallback; synthesis uses a commercial Indic TTS with three alternative provider adapters. The test suite comprises 387 Python tests, 116 worker tests and a pgTAP isolation test. During pilot sessions the agent ran on a laptop (AMD Ryzen 7 7840HS, 8 cores/16 threads, 15&#8201;GB usable RAM, Windows 11) exposed to the telephony provider through a tunnel; all model services were remote cloud APIs reached from Chennai, India.</p>
+<h3>B. Data</h3>
+<p>Per-turn telemetry was logged by the production WebSocket handler and a local harness during internal pilot sessions conducted by the development team and testers; no customer traffic is included. Of 115 sessions, 52 contained at least one completed lead turn, yielding 421 turns (Hindi 196, English 176, Tamil 49). The median session length was 98&#8201;s (p95 291&#8201;s, maximum 450&#8201;s) with a median of 6 turns. Lead-turn intents were normal 332, backchannel 32, silence 31, garbled 15, close 7, clarify 2, off-topic 1 and reject 1; the reply language changed on 18 turns.</p>
+
+<div class="tbl">
+<div class="tcap"><span class="tn">Table II</span><span class="tt">Time-to-First-Audio Components (ms)</span></div>
+<table>
+<thead><tr><th>Measure</th><th class="r"><i>n</i></th><th class="r">Mean</th><th class="r">p50</th><th class="r">p90</th><th class="r">p95</th></tr></thead>
+<tbody>
+<tr><td><i>T&#770;</i>, all turns</td><td class="r">397</td><td class="r">1688</td><td class="r">1567</td><td class="r">2627</td><td class="r">3236</td></tr>
+<tr><td>First LLM sentence</td><td class="r">382</td><td class="r">887</td><td class="r">616</td><td class="r">1438</td><td class="r">1672</td></tr>
+<tr><td>First TTS sentence</td><td class="r">358</td><td class="r">679</td><td class="r">430</td><td class="r">1448</td><td class="r">1805</td></tr>
+<tr><td>Batch STT</td><td class="r">154</td><td class="r">483</td><td class="r">442</td><td class="r">620</td><td class="r">701</td></tr>
+</tbody></table>
+</div>
+
+<p>As Table II shows, <i>T&#770;</i> was below 1&#8201;s on 21.2% of turns, below 1.5&#8201;s on 47.1% and below 2&#8201;s on 77.6%. Generation contributed 50.6% of mean <i>T&#770;</i>, synthesis 38.3% and recognition 11.1% (Fig. 2). The median <i>T&#770;</i> by reply language was 1482&#8201;ms (English), 1640&#8201;ms (Hindi) and 1414&#8201;ms (Tamil).</p>
+
+
+<h3>C. Ablation Analysis</h3>
+<div class="tbl">
+<div class="tcap"><span class="tn">Table III</span><span class="tt">Observational Ablations of Time to First Audio (ms)</span></div>
+<table>
+<thead><tr><th>Condition</th><th class="r"><i>n</i></th><th class="r">Mean</th><th class="r">p50</th><th class="r">&#916;p50</th></tr></thead>
+<tbody>
+<tr><td>Batch STT</td><td class="r">154</td><td class="r">1942</td><td class="r">1760</td><td class="r">&#8211;</td></tr>
+<tr><td>Streaming STT</td><td class="r">243</td><td class="r">1527</td><td class="r">1387</td><td class="r">&#8722;21.2%</td></tr>
+<tr class="mid"><td>Synthesised first sentence</td><td class="r">358</td><td class="r">1762</td><td class="r">1624</td><td class="r">&#8211;</td></tr>
+<tr><td>Cached first sentence</td><td class="r">39</td><td class="r">1010</td><td class="r">997</td><td class="r">&#8722;38.6%</td></tr>
+</tbody></table>
+</div>
+<p>Streaming recognition removes the recognition term from (2), and the batch condition additionally incurs the 750&#8201;ms silence window in &#916;<sub>EP</sub>, which (2) excludes; the end-to-end advantage of streaming is therefore larger than Table III shows. The comparisons are observational: the conditions co-vary with session date, code version and phrase length.</p>
+<figure>
+<img src="../latex/figures/fig_ttfa.png" alt="Time to first audio">
+<figcaption><b>Fig. 2.</b>&#8195;Time to first audio over 397 logged turns. (a) Empirical CDF for streaming-STT, batch-STT and cached-first-sentence turns. (b) Mean contribution of recognition, first-sentence generation and first-sentence synthesis by reply language.</figcaption>
+</figure>
+
+<h3>D. Provider Benchmark</h3>
+<p>Table IV was obtained with identical inputs through the agent&#8217;s own client code from Chennai on 3 November 2026 (LLMs: one prompt, time to first non-empty token; TTS: one 81-character Hindi sentence, full synthesis time; gpt-oss models served by Groq). Providers A, B and C are ElevenLabs, Cartesia and Smallest, respectively. Four Gemini requests failed with HTTP 429 under the free-tier quota, confirming the need for the availability policy of Section III. The benchmark measures first-token and full-synthesis times, which are not directly comparable with the first-sentence quantities of Table II; it indicates the relative ordering of providers on this network, not end-to-end gains.</p>
+<div class="tbl">
+<div class="tcap"><span class="tn">Table IV</span><span class="tt">Controlled Provider Benchmark, Ten Trials (ms)</span></div>
+<table>
+<thead><tr><th>Service</th><th class="r"><i>n</i></th><th class="r">Mean</th><th class="r">p50</th><th class="r">Min</th><th class="r">Max</th></tr></thead>
+<tbody>
+<tr><td>LLM gpt-oss-20b, first token</td><td class="r">10</td><td class="r">566</td><td class="r">529</td><td class="r">447</td><td class="r">846</td></tr>
+<tr><td>LLM gpt-oss-120b, first token</td><td class="r">10</td><td class="r">771</td><td class="r">789</td><td class="r">461</td><td class="r">1136</td></tr>
+<tr><td>LLM Gemini 2.5 Flash, first token</td><td class="r">6</td><td class="r">1198</td><td class="r">994</td><td class="r">845</td><td class="r">1990</td></tr>
+<tr><td>TTS provider A, Hindi sentence</td><td class="r">10</td><td class="r">892</td><td class="r">663</td><td class="r">491</td><td class="r">1482</td></tr>
+<tr><td>TTS provider B, Hindi sentence</td><td class="r">10</td><td class="r">1141</td><td class="r">1028</td><td class="r">730</td><td class="r">1547</td></tr>
+<tr><td>TTS provider C, Hindi sentence</td><td class="r">10</td><td class="r">1293</td><td class="r">1201</td><td class="r">1026</td><td class="r">1783</td></tr>
+</tbody></table>
+</div>
+
+<h3>E. Database Verification</h3>
+<p>All migrations were executed on fresh PostgreSQL instances and exercised with inserts. Isolation tests passed 4/4: each tenant observed only its own lead and cross-tenant inserts were rejected. Constraint tests rejected duplicate (tenant, phone) pairs, out-of-range scores and unknown statuses. Table V lists the defects that execution exposed.</p>
+
+
+
+<h2>V. Discussion and Limitations</h2>
+<p><i>Complexity and scalability.</i> Per-turn computation in the agent is <i>O</i>(|<i>x</i>|) in transcript length (normalisation, state updates, hashing); latency is dominated by remote services, so throughput scales with concurrent asynchronous sessions until network or provider rate limits bind. Per-call state resides in process memory, so horizontal scaling requires call-affinity routing. Each call writes about 21 rows across the schema of Fig. 3; at 100 tenants &#215; 2000 calls per month this is about <span style="white-space:nowrap">4.2&#8201;&#215;&#8201;10<sup>6</sup></span> rows per month, which motivates monthly range partitioning of the event tables, transaction-mode connection pooling and pre-aggregated views. Tenant-leading composite indexes align with the isolation predicates, and the query plan of the CRM list query is an index scan.</p>
+<p><i>Failure modes.</i> (i) Generation dominates delay and its tail (p95 of 1.67&#8201;s for the first sentence), and free-tier quotas produce HTTP 429 cascades. (ii) Recognition is single-provider, so exhausted credits disable the agent. (iii) <i>H</i>&#8201;=&#8201;2 delays genuine unrequested switches by one turn, and trigger lists are curated by hand. (iv) Merge and dangling holds protect slow speakers but add 0.4&#8211;0.7&#8201;s to completed turns. (v) Amplitude-based barge-in is vulnerable to echo. (vi) Narrowband recognition corrupts proper nouns, and the normaliser repairs only known entities.</p>
+<p><i>Threats to validity.</i> The data are internal pilot sessions with few speakers; no word error rate, human naturalness rating or lead-scoring accuracy against sales outcomes was measured, and the ablations are observational. Latencies were measured from a client in Chennai and depend on service regions.</p>
+
+<h2>VI. Conclusion and Future Work</h2>
+<p>A multilingual outbound voice agent was designed, implemented and characterised. Sentence-pipelined generation, streaming recognition and phrase caching yielded a median time to first audio of 1.57&#8201;s, with 77.6% of turns under 2&#8201;s across English, Hindi and Tamil, and the language model was identified as the dominant remaining cost. Hysteresis language control addresses the failure of utterance-level language following in code-mixed calls, and enforcing tenancy and billing in the database, verified by execution, removed three defects that review had missed. Future work comprises streaming synthesis and speculative first sentences, controlled A/B ablations, word-error-rate and naturalness evaluation with external speakers, validation of lead scores against sales outcomes, regional co-location of services, and time-partitioned storage for scale.</p>
+<div class="tbl wide">
+<div class="tcap"><span class="tn">Table V</span><span class="tt">Defects Exposed by Execution-Based Schema Verification</span></div>
+<table>
+<thead><tr><th>ID</th><th>Defect</th><th>Effect</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>D1</td><td>CHECK constraint capped credits at 2; trigger assigned 3</td><td>every call longer than 300&#8201;s rejected</td><td>constraint widened to 0&#8211;4</td></tr>
+<tr><td>D2</td><td>cost computed as credits &#215; average order value (INR 200,000)</td><td>daily INR 600 cap exceeded after one call; dispatch halted</td><td>INR 12 per credit fallback; legacy rows repaired</td></tr>
+<tr><td>D3</td><td>login-hook role blocked by row-level security on users</td><td>tokens lacked tenant claim; all tenant queries empty</td><td>role-scoped grant and policy</td></tr>
+</tbody></table>
+</div>
+<figure class="wide">
+<img src="../latex/figures/fig_schema.png" alt="Database schema">
+<figcaption><b>Fig. 3.</b>&#8195;Thirteen-table multi-tenant schema. Arrows are foreign keys from child to parent, annotated with their <span class="tt">ON DELETE</span> action; tables marked T also reference <span class="tt">tenants</span>. Every table is protected by row-level security, directly on <span class="tt">tenant_id</span> or through an <span class="tt">EXISTS</span> sub-query on <span class="tt">calls</span> or <span class="tt">leads</span>.</figcaption>
+</figure>
+
+<h2>References</h2>
+<div class="refs"><ol>
+<li>T. Stivers, N. J. Enfield, P. Brown, C. Englert, M. Hayashi, T. Heinemann, G. Hoymann, F. Rossano, J. P. de Ruiter, K.-E. Yoon, and S. C. Levinson, &#8220;Universals and cultural variation in turn-taking in conversation,&#8221; <i>Proc. Natl. Acad. Sci.</i>, vol. 106, no. 26, pp. 10587&#8211;10592, 2009.</li>
+<li>G. Skantze, &#8220;Turn-taking in conversational systems and human-robot interaction: A review,&#8221; <i>Comput. Speech Lang.</i>, vol. 67, p. 101178, 2021.</li>
+<li>M. Shannon, G. Simko, S.-Y. Chang, and C. Parada, &#8220;Improved end-of-query detection for streaming speech recognition,&#8221; in <i>Proc. Interspeech</i>, 2017, pp. 1909&#8211;1913.</li>
+<li>A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, &#8220;Robust speech recognition via large-scale weak supervision,&#8221; in <i>Proc. 40th Int. Conf. Mach. Learn. (ICML)</i>, 2023, pp. 28492&#8211;28518.</li>
+<li>V. Pratap <i>et al.</i>, &#8220;Scaling speech technology to 1,000+ languages,&#8221; <i>J. Mach. Learn. Res.</i>, vol. 25, no. 97, pp. 1&#8211;52, 2024.</li>
+<li>T. Javed <i>et al.</i>, &#8220;IndicSUPERB: A speech processing universal performance benchmark for Indian languages,&#8221; in <i>Proc. AAAI Conf. Artif. Intell.</i>, 2023, pp. 12942&#8211;12950.</li>
+<li>S. Sitaram, K. R. Chandu, S. K. Rallabandi, and A. W. Black, &#8220;A survey of code-switched speech and language processing,&#8221; arXiv:1904.00784, 2019.</li>
+<li>S. Aulbach, T. Grust, D. Jacobs, A. Kemper, and J. Rittinger, &#8220;Multi-tenant databases for software as a service: Schema-mapping techniques,&#8221; in <i>Proc. ACM SIGMOD Int. Conf. Manage. Data</i>, 2008, pp. 1195&#8211;1206.</li>
+<li>J. Dean and L. A. Barroso, &#8220;The tail at scale,&#8221; <i>Commun. ACM</i>, vol. 56, no. 2, pp. 74&#8211;80, 2013.</li>
+<li>G. K. Kumar, P. S. V, P. Kumar, M. M. Khapra, and K. Nandakumar, &#8220;Towards building text-to-speech systems for the next billion users,&#8221; in <i>Proc. IEEE Int. Conf. Acoust., Speech Signal Process. (ICASSP)</i>, 2023.</li>
+<li>J. Kim, J. Kong, and J. Son, &#8220;Conditional variational autoencoder with adversarial learning for end-to-end text-to-speech,&#8221; in <i>Proc. 38th Int. Conf. Mach. Learn. (ICML)</i>, 2021, pp. 5530&#8211;5540.</li>
+<li>Gemini Team, &#8220;Gemini: A family of highly capable multimodal models,&#8221; arXiv:2312.11805, 2023.</li>
+<li>Z. Ji, N. Lee, R. Frieske, T. Yu, D. Su, Y. Xu, E. Ishii, Y. J. Bang, A. Madotto, and P. Fung, &#8220;Survey of hallucination in natural language generation,&#8221; <i>ACM Comput. Surv.</i>, vol. 55, no. 12, pp. 248:1&#8211;248:38, 2023.</li>
+<li>R. Nyg&#229;rd and J. Mezei, &#8220;Automating lead scoring with machine learning: An experimental study,&#8221; in <i>Proc. 53rd Hawaii Int. Conf. Syst. Sci. (HICSS)</i>, 2020.</li>
+<li>The PostgreSQL Global Development Group, &#8220;Row security policies, PostgreSQL 17 documentation.&#8221; [Online]. Available: https://www.postgresql.org/docs/17/ddl-rowsecurity.html</li>
+<li>Daily, &#8220;Pipecat: Open-source framework for voice and multimodal conversational AI,&#8221; GitHub repository. [Online]. Available: https://github.com/pipecat-ai/pipecat</li>
+</ol></div>
+
+</div>
+</body>
+</html>
