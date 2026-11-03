@@ -1,0 +1,50 @@
+{
+ "LLM Gemini 2.5 Flash (stream)": {
+  "n": 6,
+  "p50": 994,
+  "mean": 1198,
+  "min": 845,
+  "max": 1990,
+  "last_error": "GeminiError: Gemini stream 429: b'{\\n  \"error\": {\\n    \"code\": 429,\\n    \"message\": \"You exceeded your current quota, please check yo"
+ },
+ "LLM gpt-oss-120b @Groq (stream)": {
+  "n": 10,
+  "p50": 789,
+  "mean": 771,
+  "min": 461,
+  "max": 1136,
+  "last_error": null
+ },
+ "LLM gpt-oss-20b @Groq (stream)": {
+  "n": 10,
+  "p50": 529,
+  "mean": 566,
+  "min": 447,
+  "max": 846,
+  "last_error": null
+ },
+ "TTS Smallest": {
+  "n": 10,
+  "p50": 1201,
+  "mean": 1293,
+  "min": 1026,
+  "max": 1783,
+  "last_error": null
+ },
+ "TTS Cartesia": {
+  "n": 10,
+  "p50": 1028,
+  "mean": 1141,
+  "min": 730,
+  "max": 1547,
+  "last_error": null
+ },
+ "TTS ElevenLabs": {
+  "n": 10,
+  "p50": 663,
+  "mean": 892,
+  "min": 491,
+  "max": 1482,
+  "last_error": null
+ }
+}
