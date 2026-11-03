@@ -443,6 +443,42 @@ create unique index tenants_ingest_api_key_uidx
   where ingest_api_key is not null;
 
 
+-- ── Per-lead call preferences (migration 0015) ─────────────────────────────
+alter table public.leads
+  add column preferred_lang text check (preferred_lang in ('ta-IN', 'hi-IN', 'en-IN')),
+  add column preferred_voice_gender text check (preferred_voice_gender in ('female', 'male'));
+
+
+-- ── Credit billing: 150s tiers, 4-credit cap (20261103000000_fix_credit_billing) ──
+alter table public.calls drop constraint if exists calls_billed_units_check;
+alter table public.calls add constraint calls_billed_units_check check (billed_units between 0 and 4);
+
+create or replace function public.compute_billed_units()
+returns trigger language plpgsql as $$
+begin
+  if new.status = 'completed' and new.duration_sec is not null then
+    new.billed_units := case
+      when new.duration_sec <= 150 then 1
+      when new.duration_sec <= 300 then 2
+      when new.duration_sec <= 450 then 3
+      else 4
+    end;
+    -- cost_guard.py writes the measured cost; otherwise use dispatch.ts PROJECTED_UNIT_COST_INR (₹12/unit).
+    if new.estimated_cost_inr = 0 then
+      new.estimated_cost_inr := new.billed_units * 12.00;
+    end if;
+  end if;
+  return new;
+end; $$;
+
+
+-- ── JWT hook needs to read public.users under RLS (20261103000100_jwt_hook_grants) ──
+grant usage on schema public to supabase_auth_admin;
+grant select on public.users to supabase_auth_admin;
+create policy users_auth_admin_read on public.users for select to supabase_auth_admin using (true);
+revoke execute on function public.custom_access_token_hook(jsonb) from authenticated, anon, public;
+
+
 -- =============================================================================
 -- BLOCK 2 — SEED: create your tenant
 -- Run AFTER block 1 succeeds. Copy the returned UUID — you'll need it.
