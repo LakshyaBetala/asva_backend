@@ -55,3 +55,7 @@ recordings/
 *.mp3
 *.wav
 *.mp4
+
+# supabase CLI local state
+packages/db/supabase/.branches/
+packages/db/supabase/.temp/
