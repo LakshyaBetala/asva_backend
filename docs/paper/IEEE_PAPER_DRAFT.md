@@ -55,6 +55,9 @@ General-purpose LLMs such as Gemini [10] enable open-domain dialogue but introdu
 
 The system comprises (i) a telephony layer that dials the lead and exchanges 8 kHz 16-bit PCM over a WebSocket; (ii) a session handler that performs endpointing, barge-in detection and call-context resolution; (iii) a turn engine that runs recognition, normalisation, language control, streaming generation and sentence synthesis; (iv) dialogue controllers—a language state machine and a monotone phase machine; (v) a concurrent slot extractor and a post-call scorer; and (vi) a PostgreSQL persistence layer with row-level security, accessed by the agent, by serverless workers (dispatch, scoring, hand-off) and by a CRM that receives realtime updates (Fig. 1).
 
+![Fig. 1. System architecture](latex/figures/fig_architecture.png)
+*Fig. 1. System architecture. A call is requested through `POST /exotel/calls`; the session handler exchanges 8 kHz audio with the telephony provider and drives the turn engine, whose stages run left to right with the phase machine and a concurrent slot extractor beside the LLM stream. Writes are asynchronous; the CRM and workers access PostgreSQL under row-level security.*
+
 ### B. Latency model
 
 For turn *k*, the perceived response delay is the time to first audio
@@ -152,6 +155,9 @@ Per-turn telemetry was logged by the production WebSocket handler and the local 
 
 $\hat T$ was below 1 s on 21.2% of turns, below 1.5 s on 47.1% and below 2 s on 77.6%. Generation contributed 50.6% of mean $\hat T$, synthesis 38.3% and recognition 11.1% (Fig. 2). Median $\hat T$ by reply language was 1482 ms (English), 1640 ms (Hindi) and 1414 ms (Tamil).
 
+![Fig. 2. Time to first audio](latex/figures/fig_ttfa.png)
+*Fig. 2. Time to first audio over 397 logged turns. (a) Empirical CDF for streaming-STT, batch-STT and cached-first-sentence turns. (b) Mean contribution of recognition, first-sentence generation and first-sentence synthesis by reply language.*
+
 ### C. Ablation analysis
 
 **Table II. Observational ablations (ms)**
@@ -191,6 +197,9 @@ All migrations were executed on fresh PostgreSQL instances and exercised with in
 | D1 | CHECK capped credits at 2; trigger assigned 3 | Every call > 300 s rejected | Constraint widened to 0–4 |
 | D2 | Cost = credits × average order value (₹200,000) | Daily ₹600 cap exceeded after one call; dispatch halted | ₹12/credit fallback; legacy rows repaired |
 | D3 | Login hook role blocked by RLS on users | Tokens lacked tenant claim; all queries empty | Role-scoped grant and policy |
+
+![Fig. 3. Schema](latex/figures/fig_schema.png)
+*Fig. 3. Thirteen-table multi-tenant schema. Arrows are foreign keys from child to parent, annotated with their `ON DELETE` action; tables marked T also reference `tenants`. Every table is protected by row-level security, directly on `tenant_id` or through an `EXISTS` sub-query on `calls` or `leads`.*
 
 ## V. Discussion and Limitations
 

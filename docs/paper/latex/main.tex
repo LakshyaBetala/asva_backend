@@ -8,9 +8,7 @@
 \usepackage{cite}
 \usepackage{url}
 \usepackage{microtype}
-
-% Placeholder figure box: replace the \figplaceholder call with \includegraphics once the figure exists.
-\newcommand{\figplaceholder}[2]{\fbox{\parbox[c][#2][c]{0.94\linewidth}{\centering\small #1}}}
+\graphicspath{{figures/}}
 
 \begin{document}
 
@@ -82,12 +80,12 @@ This work & sentence-pipelined & hysteresis state machine & concurrent, confiden
 \subsection{System Overview}
 The system comprises (i) a telephony layer that dials the lead and exchanges 8~kHz 16-bit PCM over a WebSocket; (ii) a session handler that performs endpointing, barge-in detection and call-context resolution; (iii) a turn engine that runs recognition, normalisation, language control, streaming generation and sentence synthesis; (iv) dialogue controllers, namely a language state machine and a monotone phase machine; (v) a concurrent slot extractor and a post-call scorer; and (vi) a PostgreSQL persistence layer with row-level security, accessed by the agent, by serverless workers (dispatch, scoring, hand-off) and by a CRM that receives realtime updates (Fig.~\ref{fig:arch}).
 
-\begin{figure}[htbp]
+\begin{figure*}[!t]
 \centering
-\figplaceholder{Architecture: telephony $\rightarrow$ session handler (endpointing, barge-in) $\rightarrow$ turn engine (STT, language FSM, LLM stream, sentence TTS, phrase cache) $\rightarrow$ PostgreSQL (RLS, triggers, realtime) $\leftrightarrow$ workers and CRM.}{3.2cm}
-\caption{System architecture of the proposed voice agent.}
+\includegraphics[width=\textwidth]{fig_architecture.pdf}
+\caption{System architecture. A call is requested through \texttt{POST /exotel/calls}; the session handler exchanges 8~kHz audio with the telephony provider and drives the turn engine, whose stages run left to right with the phase machine and a concurrent slot extractor beside the LLM stream. Writes are asynchronous; the CRM and workers access PostgreSQL under row-level security.}
 \label{fig:arch}
-\end{figure}
+\end{figure*}
 
 \subsection{Latency Model}
 For turn $k$, the perceived response delay is the time to first audio
@@ -216,10 +214,10 @@ Batch STT & 154 & 483 & 442 & 620 & 701 \\
 
 As Table~\ref{tab:ttfa} shows, $\hat{T}$ was below 1~s on 21.2\% of turns, below 1.5~s on 47.1\% and below 2~s on 77.6\%. Generation contributed 50.6\% of mean $\hat{T}$, synthesis 38.3\% and recognition 11.1\% (Fig.~\ref{fig:cdf}). The median $\hat{T}$ by reply language was 1482~ms (English), 1640~ms (Hindi) and 1414~ms (Tamil).
 
-\begin{figure}[htbp]
+\begin{figure}[!t]
 \centering
-\figplaceholder{Empirical CDF of $\hat{T}$ for streaming versus batch STT turns, with stacked mean shares of STT, LLM and TTS.}{3.2cm}
-\caption{Distribution and composition of time to first audio over 397 turns.}
+\includegraphics[width=\columnwidth]{fig_ttfa.pdf}
+\caption{Time to first audio over 397 logged turns. (a) Empirical CDF for streaming-STT, batch-STT and cached-first-sentence turns. (b) Mean contribution of recognition, first-sentence generation and first-sentence synthesis by reply language.}
 \label{fig:cdf}
 \end{figure}
 
@@ -287,12 +285,12 @@ D3 & login-hook role blocked by row-level security on users & tokens lacked tena
 \end{tabular}
 \end{table*}
 
-\begin{figure}[htbp]
+\begin{figure*}[!t]
 \centering
-\figplaceholder{Entity-relationship diagram: tenants $\rightarrow$ users, campaigns, leads, dnc\_list; leads $\rightarrow$ calls, handoffs, lead\_intro\_audio; calls $\rightarrow$ call\_events, transcripts, lead\_scores, qualification\_slots, turn\_latencies.}{3.2cm}
-\caption{Thirteen-table multi-tenant schema rooted at \texttt{tenants}.}
+\includegraphics[width=\textwidth]{fig_schema.pdf}
+\caption{Thirteen-table multi-tenant schema. Arrows are foreign keys from child to parent, annotated with their \texttt{ON DELETE} action; tables marked T also reference \texttt{tenants}. Every table is protected by row-level security, directly on \texttt{tenant\_id} or through an \texttt{EXISTS} sub-query on \texttt{calls} or \texttt{leads}.}
 \label{fig:schema}
-\end{figure}
+\end{figure*}
 
 \section{Discussion and Limitations}\label{sec:discussion}
 \textit{Complexity and scalability.} Per-turn computation in the agent is $O(|x|)$ in transcript length (normalisation, state updates, hashing); latency is dominated by remote services, so throughput scales with concurrent asynchronous sessions until network or provider rate limits bind. Per-call state resides in process memory, so horizontal scaling requires call-affinity routing. Each call writes about 21 rows across the schema of Fig.~\ref{fig:schema}; at 100 tenants $\times$ 2000 calls per month this is about $4.2\times10^{6}$ rows per month, which motivates monthly range partitioning of the event tables, transaction-mode connection pooling and pre-aggregated views. Tenant-leading composite indexes align with the isolation predicates, and the query plan of the CRM list query is an index scan.
