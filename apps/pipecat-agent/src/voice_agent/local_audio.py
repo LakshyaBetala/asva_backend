@@ -90,11 +90,15 @@ class _SarvamTTSAdapter:
     api_key: str
     client: httpx.AsyncClient
     speaker: str = TTS_DEFAULT_SPEAKER
+    # Production telephony is 8kHz PSTN, but this harness is for DEMO
+    # RECORDINGS — 8kHz sounds thin/choppy. Bulbul v3 supports up to 24kHz;
+    # full rate makes Priya sound rich and smooth. Override: LOCAL_TTS_SAMPLE_RATE.
+    sample_rate: int = 24000
 
     async def synth(self, text: str, lang: str) -> bytes:
         result = await tts_synthesize(
             text=text, lang=lang, api_key=self.api_key, client=self.client,
-            speaker=self.speaker,
+            speaker=self.speaker, sample_rate=self.sample_rate,
         )
         return result.audio
 
@@ -717,6 +721,12 @@ def _load_env() -> dict[str, str]:
     if dotenv_values:
         env.update({k: v for k, v in dotenv_values(".env").items() if v})
     env.update({k: v for k, v in os.environ.items() if v})
+    # Feature-flag helpers (native_tamil_script_enabled, native_hindi_script_
+    # enabled, _native_script_for, ...) read os.environ DIRECTLY, not this
+    # dict. dotenv_values() only returns a dict and never touches os.environ,
+    # so without this the harness ran with native-script OFF → romanized
+    # Tamil/Hindi fed to Bulbul → the "pronunciation is way off" bug.
+    os.environ.update(env)
     return env
 
 
@@ -783,9 +793,10 @@ def _build_deps(env: dict[str, str], http: httpx.AsyncClient) -> TurnDependencie
     # people"; TTS_PROVIDER=sarvam pins one identity.
     tts_provider_override = env.get("TTS_PROVIDER", "").strip().lower()
     sarvam_speaker = env.get("SARVAM_TTS_SPEAKER", TTS_DEFAULT_SPEAKER)
+    tts_sr = int(env.get("LOCAL_TTS_SAMPLE_RATE", "24000"))
     if tts_provider_override == "sarvam" and sarvam_key:
-        print(f"[TTS: Sarvam Bulbul v3 speaker={sarvam_speaker} (single voice, all languages)]")
-        tts_adapter = _SarvamTTSAdapter(api_key=sarvam_key, client=http, speaker=sarvam_speaker)
+        print(f"[TTS: Sarvam Bulbul v3 speaker={sarvam_speaker} @ {tts_sr}Hz (single voice, all languages)]")
+        tts_adapter = _SarvamTTSAdapter(api_key=sarvam_key, client=http, speaker=sarvam_speaker, sample_rate=tts_sr)
     elif smallest_key:
         smallest_adapter = _SmallestTTSAdapter(
             api_key=smallest_key, client=http, voice=smallest_voice,
