@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import uuid
 
 import httpx
 import pytest
@@ -167,12 +168,14 @@ def test_ws_handler_handles_unknown_call_id_by_bootstrapping(app_with_fakes):
     """A WS connection without a pre-registered call_id must not crash."""
     client = TestClient(app_with_fakes)
 
+    before = set(exotel_ws_handler._active_calls)
     with client.websocket_connect("/exotel/stream/never-registered") as ws:
         ws.send_text(_start_frame("never-registered"))
         ws.send_text(_stop_frame())
 
-    # The handler should have created an entry in _active_calls for it.
-    assert "never-registered" in exotel_ws_handler._active_calls
+    # Non-UUID ids are re-keyed to a fresh uuid4 so DB writes have a valid key.
+    new = set(exotel_ws_handler._active_calls) - before
+    assert len(new) == 1 and uuid.UUID(new.pop()).version == 4
 
 
 # -- Outbound trigger endpoint -------------------------------------------
@@ -180,7 +183,7 @@ def test_ws_handler_handles_unknown_call_id_by_bootstrapping(app_with_fakes):
 def test_trigger_outbound_call_returns_500_when_creds_missing(monkeypatch, app_with_fakes):
     monkeypatch.delenv("EXOTEL_SID", raising=False)
     client = TestClient(app_with_fakes)
-    resp = client.post("/exotel/calls", json={"to": "+919876543210"})
+    resp = client.post("/exotel/calls", json={"to": "+919876543210", "tenant_id": "t1"})
     assert resp.status_code == 500
     assert "EXOTEL_SID" in resp.json()["detail"]
 
@@ -219,6 +222,7 @@ def test_trigger_outbound_call_calls_exotel_and_registers_context(monkeypatch, a
             "lead_company": "Acme",
             "lang_hint": "hi-IN",
             "lead_id": "lead-42",
+            "tenant_id": "t1",
         },
     )
 
@@ -230,10 +234,11 @@ def test_trigger_outbound_call_calls_exotel_and_registers_context(monkeypatch, a
     assert captured["to"] == "+919876543210"
     assert captured["caller_id"] == "04447877048"
     assert captured["flow_url"].endswith("/start_voice/99001")
-    assert captured["custom_field"] == "lead-42"
     assert captured["region"] == "in"
-    # The context should have been pre-registered under the lead_id.
-    assert "lead-42" in exotel_ws_handler._active_calls
+    # CustomField carries a fresh call uuid; the context is pre-registered under it.
+    call_id = captured["custom_field"]
+    assert uuid.UUID(call_id).version == 4
+    assert exotel_ws_handler._active_calls[call_id].ctx.lead_id == "lead-42"
 
 
 # -- Barge-in detection ----------------------------------------------------
@@ -274,8 +279,8 @@ def test_trigger_outbound_call_bubbles_exotel_error_as_502(monkeypatch, app_with
     monkeypatch.setattr(exotel_ws_handler, "place_outbound_call", fake_place)
 
     client = TestClient(app_with_fakes)
-    resp = client.post("/exotel/calls", json={"to": "+91", "lead_id": "x"})
+    resp = client.post("/exotel/calls", json={"to": "+91", "lead_id": "x", "tenant_id": "t1"})
     assert resp.status_code == 502
     assert "rate limited" in resp.json()["detail"]
     # And the half-registered context should have been cleaned up.
-    assert "x" not in exotel_ws_handler._active_calls
+    assert all(a.ctx.lead_id != "x" for a in exotel_ws_handler._active_calls.values())
