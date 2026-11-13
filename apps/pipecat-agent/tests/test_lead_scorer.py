@@ -141,3 +141,11 @@ def test_score_call_uses_fallback_on_gemini_error():
         ))
     assert "Heuristic fallback" in out.reason
     assert out.classification == "hot"  # heuristic still classifies from slots
+
+
+def test_coerce_score_merges_broker_fields_into_extracted():
+    from voice_agent.lead_scorer import _coerce_score
+    raw = {"classification": "hot", "score_0_100": 92, "next_action": "book_site_visit",
+           "fields": {"bhk": "2 BHK", "locality": "Anna Nagar", "budget_range": None, "intent": "null"}}
+    s = _coerce_score(raw, {"buying_confidence": 0.8})
+    assert s.extracted == {"buying_confidence": 0.8, "bhk": "2 BHK", "locality": "Anna Nagar"}

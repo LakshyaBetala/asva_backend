@@ -90,7 +90,7 @@ begin
     from public.users where id = (event->>'user_id')::uuid;
   if v_tenant_id is not null then
     claims := jsonb_set(claims, '{tenant_id}', to_jsonb(v_tenant_id::text));
-    claims := jsonb_set(claims, '{role}',      to_jsonb(v_role));
+    claims := jsonb_set(claims, '{user_role}', to_jsonb(v_role));
   end if;
   event := jsonb_set(event, '{claims}', claims);
   return event;

@@ -146,3 +146,12 @@ def test_gemini_keys_from_env_parses_and_dedupes():
 def test_gemini_pool_empty_is_safe():
     from voice_agent.local_audio import _GeminiKeyPool
     assert _GeminiKeyPool([]).next_key() == ""
+
+
+def test_stt_result_maps_provider_languages_and_zeroes_unknown():
+    from voice_agent.local_audio import _stt_result
+    assert _stt_result(" haan ji ", "hin", 0.9).language_code == "hi-IN"
+    assert _stt_result("vanakkam", "Tamil", 1.0).language_code == "ta-IN"
+    unknown = _stt_result("bonjour", "fra", 0.99)
+    # Unknown labels must not be able to flip the language state machine.
+    assert unknown.confidence == 0.0 and unknown.transcript == "bonjour"

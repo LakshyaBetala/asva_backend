@@ -85,6 +85,70 @@ class _SarvamSTTAdapter:
         return await transcribe_batch(audio=audio, api_key=self.api_key, client=self.client)
 
 
+# Provider language labels (ISO 639-3 from ElevenLabs, names from Whisper) -> our codes.
+_STT_LANG = {"eng": "en-IN", "english": "en-IN", "en": "en-IN",
+             "hin": "hi-IN", "hindi": "hi-IN", "hi": "hi-IN",
+             "tam": "ta-IN", "tamil": "ta-IN", "ta": "ta-IN"}
+
+
+def _stt_result(text: str, lang: str | None, confidence: float) -> STTResult:
+    code = _STT_LANG.get((lang or "").strip().lower())
+    # Unknown language -> confidence 0 so the language FSM ignores the label.
+    return STTResult(transcript=(text or "").strip(), language_code=code or "en-IN",
+                     confidence=confidence if code else 0.0, request_id=None)
+
+
+@dataclass
+class _ElevenLabsSTTAdapter:
+    api_key: str
+    client: httpx.AsyncClient
+
+    async def transcribe(self, audio: bytes) -> STTResult:
+        r = await self.client.post(
+            "https://api.elevenlabs.io/v1/speech-to-text",
+            headers={"xi-api-key": self.api_key},
+            data={"model_id": "scribe_v1", "tag_audio_events": "false"},
+            files={"file": ("utterance.wav", audio, "audio/wav")},
+        )
+        r.raise_for_status()
+        j = r.json()
+        return _stt_result(j.get("text", ""), j.get("language_code"), float(j.get("language_probability") or 0.0))
+
+
+@dataclass
+class _GroqWhisperSTTAdapter:
+    api_key: str
+    client: httpx.AsyncClient
+    model: str = "whisper-large-v3-turbo"
+
+    async def transcribe(self, audio: bytes) -> STTResult:
+        r = await self.client.post(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            data={"model": self.model, "response_format": "verbose_json"},
+            files={"file": ("utterance.wav", audio, "audio/wav")},
+        )
+        r.raise_for_status()
+        j = r.json()
+        return _stt_result(j.get("text", ""), j.get("language"), 1.0)
+
+
+@dataclass
+class _FallbackSTT:
+    """Try each STT provider in order; a quota/outage error moves on to the next."""
+    providers: list[tuple[str, Any]]
+
+    async def transcribe(self, audio: bytes) -> STTResult:
+        last: Exception | None = None
+        for name, p in self.providers:
+            try:
+                return await p.transcribe(audio)
+            except Exception as exc:
+                print(f"  [STT {name} failed: {str(exc)[:80]} -> next provider]")
+                last = exc
+        raise RuntimeError(f"all STT providers failed: {last}")
+
+
 @dataclass
 class _SarvamTTSAdapter:
     api_key: str
@@ -749,19 +813,22 @@ def _build_deps(env: dict[str, str], http: httpx.AsyncClient) -> TurnDependencie
     smallest_rate = int(env.get("SMALLEST_SAMPLE_RATE", str(SMALLEST_DEFAULT_RATE)))
     smallest_speed = float(env.get("SMALLEST_SPEED", "1.0"))
     smallest_lang_hint = env.get("SMALLEST_LANG_HINT", "tamil_only")
-    if not sarvam_key and not cartesia_key and not smallest_key:
-        raise SystemExit("SARVAM_API_KEY, SMALLEST_API_KEY or CARTESIA_API_KEY must be set in .env")
+    if not (sarvam_key or cartesia_key or smallest_key or eleven_key):
+        raise SystemExit("SARVAM_API_KEY, SMALLEST_API_KEY, CARTESIA_API_KEY or ELEVENLABS_API_KEY must be set in .env")
     if not gemini_key and not groq_key:
         raise SystemExit("GEMINI_API_KEY or GROQ_API_KEY must be set in .env")
 
-    # R2 is optional — without it the phrase cache simply always misses.
+    # R2 is optional — without it the phrase cache simply always misses. Off by default
+    # locally: from a laptop each R2 lookup took seconds (and timed out), slower than synthesis.
     try:
+        if env.get("LOCAL_R2_CACHE", "").strip().lower() not in ("1", "true", "yes"):
+            raise R2ConfigError("LOCAL_R2_CACHE not set")
         r2_cfg = R2Config.from_env(env)
         r2 = R2Client(r2_cfg)
         r2_reader = r2
         r2_writer = r2
     except R2ConfigError as exc:
-        print(f"[warn] R2 disabled ({exc}). Phrase cache will always miss.")
+        print(f"[R2 phrase cache off ({exc})]")
         r2_reader = _NoOpR2()
         r2_writer = _NoOpR2()
 
@@ -844,8 +911,21 @@ def _build_deps(env: dict[str, str], http: httpx.AsyncClient) -> TurnDependencie
         print("[TTS: Sarvam Bulbul v3]")
         tts_adapter = _SarvamTTSAdapter(api_key=sarvam_key, client=http)
 
+    # STT chain: STT_PROVIDER first, then every other provider with a key as fallback.
+    stt_all = {
+        "elevenlabs": eleven_key and _ElevenLabsSTTAdapter(api_key=eleven_key, client=http),
+        "groq": groq_key and _GroqWhisperSTTAdapter(api_key=groq_key, client=http),
+        "sarvam": sarvam_key and _SarvamSTTAdapter(api_key=sarvam_key, client=http),
+    }
+    first = env.get("STT_PROVIDER", "sarvam").strip().lower()
+    order = [first] + [n for n in ("elevenlabs", "groq", "sarvam") if n != first]
+    stt_chain = [(n, stt_all[n]) for n in order if stt_all.get(n)]
+    if not stt_chain:
+        raise SystemExit("ELEVENLABS_API_KEY, GROQ_API_KEY or SARVAM_API_KEY must be set for STT")
+    print(f"[STT: {' -> '.join(n for n, _ in stt_chain)}]")
+
     return TurnDependencies(
-        stt=_SarvamSTTAdapter(api_key=sarvam_key, client=http),
+        stt=_FallbackSTT(stt_chain),
         tts=tts_adapter,
         llm=llm_adapter,
         r2_reader=r2_reader,
@@ -871,11 +951,12 @@ async def run_local(args: argparse.Namespace) -> None:
     env = _load_env()
     async with httpx.AsyncClient(timeout=30.0) as http:
         deps = _build_deps(env, http)
+        call = await _open_crm_call(env, args, http)
 
         ctx = make_initial_context(
-            call_id="local-test",
-            tenant_id=args.tenant_id,
-            lead_id="local-lead",
+            call_id=call.call_id if call else "local-test",
+            tenant_id=call.tenant_id if call else args.tenant_id,
+            lead_id=call.lead_id if call else "local-lead",
             lead_first_name=args.lead_name,
             lead_company=args.lead_company,
             default_lang=args.lang,
@@ -967,6 +1048,8 @@ async def run_local(args: argparse.Namespace) -> None:
                     slots = event.slots
                     wall_ms = int((time.monotonic() - t0) * 1000)
                     lm = event.latency_ms
+                    if call:
+                        call.record_turn(ctx, event)
                     print(
                         f"\n  LEAD: {event.lead_text}"
                         f"\n  [{ctx.turn_idx}|{ctx.conversation_state.phase.value}|"
@@ -985,6 +1068,83 @@ async def run_local(args: argparse.Namespace) -> None:
         print(f"  billed units: {ctx.billed_units()}")
         print(f"  cache hits:   {ctx.phrase_cache_hits}")
         print(f"  final score:  {slots.score(frozenset())}")
+        if call:
+            await call.close(ctx, slots, env)
+
+
+@dataclass
+class _CrmCall:
+    """Mirrors the Exotel handler's persistence so a local call shows up in the CRM."""
+    db: Any
+    call_id: str
+    tenant_id: str
+    lead_id: str
+    transcript: list[dict[str, str]]
+    pending: list[asyncio.Task]
+
+    def record_turn(self, ctx: Any, event: TurnCompleteEvent) -> None:
+        from .supabase_client import persist_turn_async
+        self.transcript += [{"speaker": "lead", "text": event.lead_text},
+                            {"speaker": "priya", "text": event.priya_full_text}]
+        turn = ctx.turn_idx - 1
+        task = persist_turn_async(
+            self.db, call_id=self.call_id, tenant_id=self.tenant_id, lead_id=self.lead_id,
+            turn_idx=turn, lead_text=event.lead_text, lead_lang=event.lead_lang,
+            priya_text=event.priya_full_text,
+            slots_row=event.slots.to_db_row(call_id=self.call_id, tenant_id=self.tenant_id,
+                                            lead_id=self.lead_id, turn_idx=turn),
+            latency={"stt_ms": event.latency_ms.get("stt_ms"),
+                     "llm_ms": event.latency_ms.get("llm_first_sentence_ms"),
+                     "tts_ms": event.latency_ms.get("tts_first_sentence_ms"),
+                     "total_ms": event.latency_ms.get("total_ms", 0)},
+        )
+        if task:
+            self.pending.append(task)
+
+    async def close(self, ctx: Any, slots: QualificationSlots, env: dict[str, str]) -> None:
+        from .lead_scorer import score_call
+        await asyncio.gather(*self.pending)
+        await self.db.update_call_status(call_id=self.call_id, status="completed",
+                                         duration_sec=ctx.elapsed(), billed_units=ctx.billed_units())
+        result = await score_call(
+            transcript_turns=self.transcript,
+            slots=slots.to_db_row(call_id=self.call_id, tenant_id=self.tenant_id,
+                                  lead_id=self.lead_id, turn_idx=ctx.turn_idx),
+            api_key=next_gemini_key() or env.get("GEMINI_API_KEY", ""),
+        )
+        await self.db.insert_lead_score(
+            lead_id=self.lead_id, call_id=self.call_id, classification=result.classification,
+            score=result.score, reason=result.reason, summary=result.summary,
+            next_action=result.next_action, extracted=result.extracted,
+        )
+        status = {"dead": "do_not_call"}.get(result.classification, result.classification)
+        await self.db._patch("leads", {"id": self.lead_id}, {"status": status})
+        print(f"  CRM:          call {self.call_id} saved, scored {result.classification} ({result.score})")
+
+
+async def _open_crm_call(env: dict[str, str], args: argparse.Namespace,
+                         http: httpx.AsyncClient) -> _CrmCall | None:
+    """With --lead-id, load that lead from Supabase and open a calls row for this session."""
+    if not args.lead_id:
+        return None
+    import uuid
+    from .supabase_client import AgentSupabaseClient, SupabaseConfig
+    cfg = SupabaseConfig.from_env(env)
+    db = AgentSupabaseClient(cfg, client=http)
+    r = await http.get(f"{db._url('leads')}?id=eq.{args.lead_id}&select=tenant_id,name,company",
+                       headers=db._headers)
+    r.raise_for_status()
+    rows = r.json()
+    if not rows:
+        raise SystemExit(f"lead {args.lead_id} not found in Supabase")
+    lead = rows[0]
+    args.lead_name = (lead.get("name") or args.lead_name).split()[0]
+    args.lead_company = lead.get("company") or args.lead_company
+    call = _CrmCall(db=db, call_id=str(uuid.uuid4()), tenant_id=lead["tenant_id"],
+                    lead_id=args.lead_id, transcript=[], pending=[])
+    await db.insert_call(call_id=call.call_id, tenant_id=call.tenant_id, lead_id=call.lead_id, lang=args.lang)
+    print(f"[CRM: logging call {call.call_id} for lead {lead.get('name')}]")
+    return call
 
 
 def main() -> None:
@@ -993,6 +1153,7 @@ def main() -> None:
     p.add_argument("--lead-name", default="Suresh")
     p.add_argument("--lead-company", default="Acme Chemicals")
     p.add_argument("--tenant-id", default="spc-tenant")
+    p.add_argument("--lead-id", default=None, help="CRM lead UUID; logs the call, transcript and score to Supabase")
     p.add_argument("--list-devices", action="store_true", help="List audio devices and exit")
     p.add_argument("--device", type=int, default=None, help="Input device index (from --list-devices)")
     p.add_argument("--record-seconds", type=float, default=8.0, help="Auto-record duration (0=press-enter mode)")

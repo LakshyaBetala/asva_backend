@@ -149,13 +149,15 @@ class AgentSupabaseClient:
         lang: str | None = None, turn_idx: int = 0,
     ) -> None:
         db_speaker = "agent" if speaker == "priya" else speaker
+        # Two lines per turn (lead then agent); (call_id, idx) is unique, so interleave them.
+        idx = turn_idx * 2 + (1 if db_speaker == "agent" else 0)
         await self._post("transcripts", {
             "call_id": call_id,
             "speaker": db_speaker,
             "text": text,
             "lang": lang,
-            "ts_ms": turn_idx * 10000,
-            "idx": turn_idx,
+            "ts_ms": idx * 5000,
+            "idx": idx,
         })
 
     async def update_call_status(
@@ -203,7 +205,6 @@ class AgentSupabaseClient:
     ) -> None:
         if not (_is_uuid(call_id) and _is_uuid(lead_id)):
             return
-        import json as _json
         await self._post("lead_scores", {
             "lead_id": lead_id,
             "call_id": call_id,
@@ -212,7 +213,8 @@ class AgentSupabaseClient:
             "reason": reason,
             "summary": summary,
             "next_action": next_action or "",
-            "extracted": _json.dumps(extracted or {}),
+            # A dict, not json.dumps(): a string lands in jsonb as a JSON string the CRM can't read.
+            "extracted": extracted or {},
             "call_quality_flags": "{}",
         })
 
@@ -234,16 +236,16 @@ def persist_turn_async(
     slots_row: dict[str, Any],
     latency: dict[str, int],
     used_intro_cache: bool = False,
-) -> None:
-    """Schedule all per-turn DB writes. Safe to call with db=None (no-op).
+) -> asyncio.Task | None:
+    """Schedule all per-turn DB writes and return the task. Safe to call with db=None (no-op).
     No-ops unless call_id, tenant_id, and lead_id are all real UUIDs —
     the agent supports trial calls without a backing leads/tenant row
     (e.g. `default-tenant` sentinel), and those would otherwise spam
     22P02 (bad uuid) or 23503 (FK miss) errors on every turn."""
     if db is None:
-        return
+        return None
     if not (_is_uuid(call_id) and _is_uuid(tenant_id) and _is_uuid(lead_id)):
-        return
+        return None
 
     async def _run() -> None:
         try:
@@ -272,4 +274,4 @@ def persist_turn_async(
         except Exception:
             logger.exception("persist_turn_async failed for call_id=%s turn=%d", call_id, turn_idx)
 
-    asyncio.create_task(_run())
+    return asyncio.create_task(_run())

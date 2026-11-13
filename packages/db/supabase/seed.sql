@@ -7,10 +7,12 @@ values ('00000000-0000-0000-0000-0000000000c1',
 on conflict (slug) do nothing;
 
 -- Demo admin user. Password = 'demo-password-change-me'. Change after first login.
--- GoTrue rejects password login when the token columns are NULL, so they are set to ''.
+-- GoTrue scans these into non-null Go types: NULL token strings or timestamps make
+-- password login fail with "Database error querying schema".
 insert into auth.users (id, email, encrypted_password, email_confirmed_at, role,
                         aud, instance_id, raw_app_meta_data, raw_user_meta_data,
-                        confirmation_token, recovery_token, email_change, email_change_token_new)
+                        confirmation_token, recovery_token, email_change, email_change_token_new,
+                        created_at, updated_at)
 values ('00000000-0000-0000-0000-0000000000a1',
         'admin@spc.test',
         crypt('demo-password-change-me', gen_salt('bf')),
@@ -19,12 +21,15 @@ values ('00000000-0000-0000-0000-0000000000a1',
         'authenticated',
         '00000000-0000-0000-0000-000000000000',
         '{"provider":"email","providers":["email"]}', '{}',
-        '', '', '', '')
+        '', '', '', '',
+        now(), now())
 on conflict (id) do nothing;
 
-insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at)
+insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at,
+                             created_at, updated_at)
 values ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a1',
-        '{"sub":"00000000-0000-0000-0000-0000000000a1","email":"admin@spc.test"}', 'email', now())
+        '{"sub":"00000000-0000-0000-0000-0000000000a1","email":"admin@spc.test"}', 'email', now(),
+        now(), now())
 on conflict do nothing;
 
 insert into public.users (id, tenant_id, email, full_name, role, whatsapp)

@@ -115,8 +115,15 @@ async def test_insert_transcript_posts_with_speaker_and_text():
     assert captured["body"]["speaker"] == "lead"
     assert captured["body"]["text"] == "haan ji"
     assert captured["body"]["lang"] == "hi-IN"
-    assert captured["body"]["idx"] == 2
+    # Lead and agent lines of one turn share turn_idx, so they interleave: lead=2k, agent=2k+1.
+    assert captured["body"]["idx"] == 4
     assert captured["body"]["ts_ms"] == 20000
+
+    async with httpx.AsyncClient(transport=transport) as http:
+        db = AgentSupabaseClient(_config(), client=http)
+        await db.insert_transcript(call_id="c1", speaker="priya", text="ji", turn_idx=2)
+    assert captured["body"]["speaker"] == "agent"
+    assert captured["body"]["idx"] == 5
 
 
 @pytest.mark.asyncio

@@ -33,8 +33,19 @@ Output ONLY valid JSON, no prose, no markdown:
   "score_0_100": integer,
   "reason": string (one sentence, why this classification),
   "summary": string (2-3 sentences, what happened on the call),
-  "next_action": string (one concrete action for the broker's team)
+  "next_action": string (one concrete action for the broker's team),
+  "fields": {
+    "intent": "buy" | "rent" | null,
+    "budget_range": string|null (as stated, e.g. "80 lakh", "35-45k/month"),
+    "locality": string|null,
+    "bhk": string|null (e.g. "2 BHK"),
+    "possession_timeline": string|null (e.g. "within 2 months"),
+    "purpose": "self_use" | "investment" | null,
+    "loan_status": string|null,
+    "site_visit_slot": string|null (agreed day + time, e.g. "Saturday 11 AM")
+  }
 }
+Fill "fields" only from what the lead actually said; use null when unknown.
 
 Rules for classification:
   hot   = agreed to a site visit (gave or accepted a day + time), OR gave clear
@@ -116,13 +127,16 @@ def _coerce_score(raw: dict[str, Any], slots: dict[str, Any]) -> LeadScore:
     action = str(raw.get("next_action", "followup_30d")).lower().strip()
     if action not in _VALID_ACTIONS:
         action = "followup_30d"
+    # Broker fields the CRM verdict panel renders (intent, budget_range, locality, bhk, ...).
+    fields = raw.get("fields") if isinstance(raw.get("fields"), dict) else {}
+    broker = {k: str(v).strip()[:120] for k, v in fields.items() if v not in (None, "", "null")}
     return LeadScore(
         classification=cls,
         score=score,
         reason=str(raw.get("reason") or "").strip()[:500],
         summary=str(raw.get("summary") or "").strip()[:1000],
         next_action=action,
-        extracted=slots,
+        extracted={**slots, **broker},
     )
 
 
@@ -170,7 +184,7 @@ async def score_call(
             user_message=prompt,
             api_key=api_key,
             model=model,
-            generation_config={"temperature": 0.2, "maxOutputTokens": 500},
+            generation_config={"temperature": 0.2, "maxOutputTokens": 900},
         )
     except Exception as exc:
         logger.warning("lead_scorer Gemini call failed: %s", exc)
