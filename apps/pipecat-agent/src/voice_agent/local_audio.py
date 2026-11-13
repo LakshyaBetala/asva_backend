@@ -1011,7 +1011,10 @@ async def run_local(args: argparse.Namespace) -> None:
                 print(f"\n  [listening...]")
                 pcm = auto_record(duration_sec=MAX_RECORD_SEC, device=device)
             else:
-                line = input("Press ENTER to record (or 'q' to quit): ").strip()
+                try:
+                    line = input("Press ENTER to record (or 'q' to quit): ").strip()
+                except EOFError:  # stdin closed (Ctrl+Z / piped input): end the call cleanly
+                    line = "q"
                 if line.lower() == "q":
                     break
                 pcm = record_until_enter(device=device)

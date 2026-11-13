@@ -2,13 +2,25 @@
 
 Everything runs on this laptop: Supabase in Docker, the CRM on `localhost:3000`, and the voice agent through the laptop mic and speakers. A call made locally lands in the CRM like a phone call: transcript, live qualification, AI verdict, lead status.
 
-## 1. Start the stack
+## One click
 
-```powershell
-.\start-local.ps1
+Double-click **ASVA Demo** on the Desktop, or run `run-all` from the repo folder. It:
+
+1. stops any previous CRM or voice-agent run,
+2. starts Docker and the local database (API `127.0.0.1:54321`, Postgres `127.0.0.1:54322`),
+3. starts the CRM in its own window (http://localhost:3000, login `admin@spc.test` / `demo-password-change-me`),
+4. picks the newest lead with no call yet and opens its page in the browser,
+5. starts the voice call in the same window.
+
+During the call: press **ENTER** to talk, **ENTER** again to stop; Priya answers through the speakers. Ask to switch language at any time ("Hindi mein baat karo", "Tamil-la pesalama?"). Type **q** + ENTER to end. The window prints `CRM: call ... saved, scored hot (95)`; refresh the lead page to see the transcript, verdict and status.
+
+Variants:
+
 ```
-
-Starts Docker Desktop if needed, then local Supabase (API `127.0.0.1:54321`, Postgres `127.0.0.1:54322`) and the CRM. Log in at http://localhost:3000 with `admin@spc.test` / `demo-password-change-me`.
+run-all <lead-id> hi-IN     call a specific lead (id = end of its CRM URL), starting in Hindi
+run-all -SkipCall           only (re)start the database and CRM
+apps\pipecat-agent\local-call <lead-id>   another call while the CRM is already running
+```
 
 First time only (or to wipe and reload demo data):
 
@@ -16,24 +28,6 @@ First time only (or to wipe and reload demo data):
 cd packages/db; npx -y supabase@2.54.11 db reset --workdir .; cd ../..
 $env:DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"; node seed-remote-ultimate.js
 ```
-
-## 2. Make a call
-
-1. In the CRM, open a lead. Its id is the last part of the URL: `/leads/<lead-id>`.
-2. Run:
-
-```powershell
-cd apps/pipecat-agent
-python -m voice_agent.local_audio --lead-id <lead-id> --lang en-IN --record-seconds 0
-```
-
-Priya greets the lead by name. Press **ENTER** to start talking and **ENTER** again to stop; she replies through the speakers. Type **q** + ENTER to end the call.
-
-To switch language, just ask: "Hindi mein baat karo", "Can we talk in English?", "Tamil-la pesalama?". She switches and keeps the rest of the call in that language.
-
-3. When the call ends the terminal prints `CRM: call ... saved, scored hot (95)`. Refresh the lead page: transcript, verdict (buy/rent, budget, locality, BHK, site visit), live qualification and status are filled in.
-
-Without `--lead-id` the harness still works, but nothing is saved.
 
 ## Providers (apps/pipecat-agent/.env)
 
