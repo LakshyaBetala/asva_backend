@@ -48,6 +48,16 @@ class GroqError(RuntimeError):
     pass
 
 
+def _model_defaults(model: str) -> dict[str, Any]:
+    # Reasoning models think silently before the first spoken token. With the real 9k-char prompt
+    # (2026-11-16): qwen3 no-think 1st sentence ~0.37 s, gpt-oss low ~0.61 s, Gemini 2.5 Flash ~1.3 s.
+    if "qwen3" in model:
+        return {"reasoning_effort": "none"}
+    if "gpt-oss" in model:
+        return {"reasoning_effort": "low"}
+    return {}
+
+
 @dataclass
 class GroqResponse:
     text: str
@@ -70,7 +80,7 @@ async def generate(
     if not api_key:
         raise GroqError("missing GROQ_API_KEY")
 
-    cfg = {**DEFAULT_GENERATION_CONFIG, **(generation_config or {})}
+    cfg = {**DEFAULT_GENERATION_CONFIG, **_model_defaults(model), **(generation_config or {})}
     url = f"{base_url.rstrip('/')}/chat/completions"
     body = {
         "model": model,
@@ -125,7 +135,7 @@ async def stream_generate(
     if not api_key:
         raise GroqError("missing GROQ_API_KEY")
 
-    cfg = {**DEFAULT_GENERATION_CONFIG, **(generation_config or {})}
+    cfg = {**DEFAULT_GENERATION_CONFIG, **_model_defaults(model), **(generation_config or {})}
     url = f"{base_url.rstrip('/')}/chat/completions"
     body = {
         "model": model,

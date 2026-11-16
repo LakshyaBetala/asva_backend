@@ -496,8 +496,10 @@ class _GroqAdapter:
                         "next %.0fs", _GROQ_TPD_COOLDOWN_SEC,
                     )
                 wait = _parse_groq_retry_after(msg)
+                # With an alt pool configured (separate TPM bucket, ~0.6 s), hop now instead of sleeping.
+                has_alt_pool = bool(self.alt_base_url and self.alt_api_key and self.alt_model)
                 if (
-                    transient and first_chunk and not retried
+                    transient and first_chunk and not retried and not has_alt_pool
                     and wait is not None and wait <= 2.0
                 ):
                     retried = True
@@ -694,6 +696,65 @@ def record_until_enter(device: int | None = None) -> bytes:
         print("[WARNING: audio clipping — reduce mic volume to 60-70%]")
 
     return pcm
+
+
+async def record_streaming_until_enter(stt: Any, device: int | None = None) -> tuple[bytes, float]:
+    """Record until ENTER while feeding each 100 ms mic chunk to the streaming STT.
+
+    The transcript is built while the lead talks, so only the final flush is left
+    after ENTER. Returns (pcm, monotonic time ENTER was pressed); the PCM is kept
+    for the batch fallback.
+    """
+    sd, _np = _get_sounddevice()
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[bytes] = asyncio.Queue()
+    chunks: list[bytes] = []
+
+    def on_audio(indata: Any, frames: int, t: Any, status: Any) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, bytes(indata))
+
+    def wait_enter() -> None:
+        try:
+            input()
+        except EOFError:
+            pass
+
+    while stt.pop_final() is not None:  # drop stray segments from Priya's own audio
+        pass
+    print("[recording (streaming) — speak now, press ENTER when done]")
+    enter = loop.run_in_executor(None, wait_enter)
+    started = time.monotonic()
+    with sd.RawInputStream(samplerate=SAMPLE_RATE_HZ, channels=CHANNELS, dtype="int16",
+                           blocksize=SAMPLE_RATE_HZ // 10, device=device, callback=on_audio):
+        while not enter.done():
+            try:
+                chunk = await asyncio.wait_for(queue.get(), 0.05)
+            except asyncio.TimeoutError:
+                continue
+            chunks.append(chunk)
+            await stt.feed(chunk)
+        t_enter = time.monotonic()
+        short = MIN_RECORDING_MS / 1000 - (t_enter - started)
+        if short > 0:
+            await asyncio.sleep(short)
+    while not queue.empty():
+        chunk = queue.get_nowait()
+        chunks.append(chunk)
+        await stt.feed(chunk)
+    return b"".join(chunks), t_enter
+
+
+async def await_streaming_final(stt: Any, timeout: float = 2.0) -> STTResult | None:
+    """Flush the streaming STT and wait for its final transcript (None on timeout/failure)."""
+    await stt.flush()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and not stt.failed:
+        first = stt.pop_final()
+        if first is not None:
+            await asyncio.sleep(0.05)  # a trailing segment of the same turn may still land
+            return stt.drain_finals(first)
+        await asyncio.sleep(0.02)
+    return None
 
 
 SILENCE_THRESHOLD = 300
@@ -994,6 +1055,8 @@ async def run_local(args: argparse.Namespace) -> None:
         print()
 
         slots = QualificationSlots()
+        stt_stream = await _open_streaming_stt(env, args.lang) if args.record_seconds <= 0 else None
+        repins: list[asyncio.Task] = []
         sdeps = StreamingDependencies(
             stt=deps.stt, tts=deps.tts, llm=deps.llm,
             r2_reader=deps.r2_reader, r2_writer=deps.r2_writer,
@@ -1017,7 +1080,10 @@ async def run_local(args: argparse.Namespace) -> None:
                     line = "q"
                 if line.lower() == "q":
                     break
-                pcm = record_until_enter(device=device)
+                if stt_stream is not None:
+                    pcm, t_enter = await record_streaming_until_enter(stt_stream, device=device)
+                else:
+                    pcm = record_until_enter(device=device)
 
             if not pcm:
                 print("[no speech detected]")
@@ -1025,13 +1091,21 @@ async def run_local(args: argparse.Namespace) -> None:
 
             wav = pcm_to_wav_bytes(pcm)
             t0 = time.monotonic()
+            pre = None
+            if stt_stream is not None and auto_record_sec <= 0:
+                t0 = t_enter  # latency is measured from the moment the lead stops (ENTER)
+                pre = await await_streaming_final(stt_stream)
+                if pre is None:
+                    print("[streaming STT gave no transcript — batch STT for the rest of the call]")
+                    await stt_stream.close()
+                    stt_stream = None
 
             sentence_count = 0
             rest_pcm_parts: list[bytes] = []
             playback_sr = TTS_OUTPUT_SAMPLE_RATE
 
             async for event in run_turn_streaming(
-                ctx=ctx, audio_in=wav, deps=sdeps, prior_slots=slots,
+                ctx=ctx, audio_in=wav, deps=sdeps, prior_slots=slots, pre_transcribed=pre,
             ):
                 if isinstance(event, AudioChunkEvent):
                     sentence_count += 1
@@ -1053,6 +1127,10 @@ async def run_local(args: argparse.Namespace) -> None:
                     lm = event.latency_ms
                     if call:
                         call.record_turn(ctx, event)
+                    if stt_stream is not None and event.language_transition.switched:
+                        # Re-pin the streaming STT to the new language while Priya is speaking.
+                        repins.append(asyncio.create_task(
+                            stt_stream.repin(event.language_transition.current_language.value)))
                     print(
                         f"\n  LEAD: {event.lead_text}"
                         f"\n  [{ctx.turn_idx}|{ctx.conversation_state.phase.value}|"
@@ -1065,6 +1143,9 @@ async def run_local(args: argparse.Namespace) -> None:
 
             time.sleep(0.3)
 
+        if stt_stream is not None:
+            await asyncio.gather(*repins, return_exceptions=True)
+            await stt_stream.close()
         print("\n=== Call summary ===")
         print(f"  turns:        {ctx.turn_idx}")
         print(f"  elapsed:      {ctx.elapsed():.1f}s")
@@ -1123,6 +1204,22 @@ class _CrmCall:
         status = {"dead": "do_not_call"}.get(result.classification, result.classification)
         await self.db._patch("leads", {"id": self.lead_id}, {"status": status})
         print(f"  CRM:          call {self.call_id} saved, scored {result.classification} ({result.score})")
+
+
+async def _open_streaming_stt(env: dict[str, str], lang: str) -> Any:
+    """Sarvam streaming STT (India-hosted) pinned to the call language; None = use batch STT."""
+    key = env.get("SARVAM_API_KEY", "")
+    if not key or env.get("LOCAL_STREAMING_STT", "1").strip().lower() in ("0", "false", "no"):
+        return None
+    from .sarvam_streaming_stt import SarvamStreamingSTT
+    stt = SarvamStreamingSTT(api_key=key, sample_rate=SAMPLE_RATE_HZ, language_hint=lang)
+    try:
+        await stt.start()
+    except Exception as exc:
+        print(f"[streaming STT unavailable ({str(exc)[:70]}) — using batch STT]")
+        return None
+    print("[STT: Sarvam streaming — transcribes while you speak]")
+    return stt
 
 
 async def _open_crm_call(env: dict[str, str], args: argparse.Namespace,
