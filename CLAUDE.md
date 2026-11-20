@@ -30,7 +30,7 @@ pnpm test | pnpm typecheck | pnpm lint
 pnpm --filter @ai-voice/campaigns-worker test     # one workspace
 pnpm --filter @ai-voice/web exec vitest run path/to/file.test.ts
 
-# Local Supabase (Docker Desktop must be running). API :54321, DB :54322, Studio :54323
+# Local Supabase (Docker Desktop must be running). API :44321, DB :44322, Studio :44323 (moved off 5432x: Windows reserves that range)
 pnpm db:start                # = supabase start --workdir packages/db (CLI via npx supabase if not installed)
 pnpm db:reset                # re-apply migrations + seed.sql
 pnpm --filter @ai-voice/db test:rls

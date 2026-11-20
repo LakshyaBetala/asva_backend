@@ -7,7 +7,7 @@ Everything runs on this laptop: Supabase in Docker, the CRM on `localhost:3000`,
 Double-click **ASVA Demo** on the Desktop, or run `run-all` from the repo folder. It:
 
 1. stops any previous CRM or voice-agent run,
-2. starts Docker and the local database (API `127.0.0.1:54321`, Postgres `127.0.0.1:54322`),
+2. starts Docker and the local database (API `127.0.0.1:44321`, Postgres `127.0.0.1:44322`),
 3. starts the CRM in its own window (http://localhost:3000, login `admin@spc.test` / `demo-password-change-me`),
 4. picks the newest lead with no call yet and opens its page in the browser,
 5. starts the voice call in the same window.
@@ -26,7 +26,7 @@ First time only (or to wipe and reload demo data):
 
 ```powershell
 cd packages/db; npx -y supabase@2.54.11 db reset --workdir .; cd ../..
-$env:DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"; node seed-remote-ultimate.js
+$env:DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:44322/postgres"; node seed-remote-ultimate.js
 ```
 
 ## Providers (apps/pipecat-agent/.env)
